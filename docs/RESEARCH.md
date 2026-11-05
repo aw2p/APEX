@@ -142,7 +142,14 @@ tests enforce that these cannot sneak in even from code I don't write.
   board visibly changed colour.  **This is the one that lights the keys.**
 * direct frame `00 40` at 642 B: ACK `[40 00 70 …]` but board ignored it.
 * legacy `00 3A`: sent, no colour change (reply echoes unrelated data).
-* release `00 62`: ACK; lighting returns to on-board profile.
+* firmware: `00 90` OUT → reply `[ASCII "3.24.1"…]` on the same input queue
+  (byte 0 is the string itself, no opcode prefix — differs from OpenRGB's
+  older convention; capture-tolerant parse).
+* brightness `00 23 N` OUT: accepted silently; **user controls brightness
+  with the Fn keybinds instead** (the `0xA3` read and the `FFC1` notify
+  channel do not respond from the host side on this dongle).
+* release `00 62`: ACK; lighting returns to on-board profile.Check
+  [(user-observed: profile resumes)].
 * battery: `00 D2` → `[D2 <data> 00 00 02 …]` (first data byte was 0x14=20 —
   likely battery percentage or raw gauge; calibrate later).
 * unanswered on this channel (needs more experiments): `90` firmware, `A3`
