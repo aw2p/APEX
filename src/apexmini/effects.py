@@ -162,9 +162,70 @@ class Reactive(Effect):
         return out
 
 
+class Candle(Effect):
+    """Per-key candlelight: nearly-dark red up to bright amber, each key
+    flickering on its own stack of incommensurate sines plus a shared
+    'gust' — slow, organic, never repeating visibly (hash-seeded phases)."""
+
+    def __init__(self, keys, seed=3, speed=1.0):
+        super().__init__(keys)
+        import random
+        rng = random.Random(seed)
+        self.speed = speed
+        self.phase = {}
+        self.freq = {}
+        self.base = {}
+        for u in keys:
+            self.phase[u] = (
+                rng.uniform(0, 2 * math.pi),
+                rng.uniform(0, 2 * math.pi),
+                rng.uniform(0, 2 * math.pi),
+            )
+            self.freq[u] = (
+                rng.uniform(0.09, 0.16),   # slow breathing (6–11 s)
+                rng.uniform(0.3, 0.55),    # mid flicker (2–3 s)
+                rng.uniform(0.9, 1.6),     # quick shimmer (~0.7 s), tiny amplitude
+            )
+            self.base[u] = 0.28 + 0.42 * rng.random()
+
+    dark = (55, 0, 0)          # near-black red
+    mid = (255, 70, 0)         # deep orange
+    bright = (255, 140, 25)    # bright amber
+    peak = (255, 190, 90)      # occasional hot moment
+
+    @staticmethod
+    def _ramp(v):
+        # two-segment gradient dark->mid->bright, then a hint of peak
+        if v < 0.5:
+            t = v / 0.5
+            return lerp(Candle.dark, Candle.mid, t)
+        if v < 0.9:
+            return lerp(Candle.mid, Candle.bright, (v - 0.5) / 0.4)
+        return lerp(Candle.bright, Candle.peak, (v - 0.9) / 0.1)
+
+    def tick(self, t):
+        now = time.monotonic() * self.speed
+        out = {}
+        gust = 0.07 * math.sin(2 * math.pi * now / 11.0 + 1.7) \
+             + 0.05 * math.sin(2 * math.pi * now / 3.9 + 0.4)
+        for u in self.key_usages:
+            p1, p2, p3 = self.phase[u]
+            f1, f2, f3 = self.freq[u]
+            v = self.base[u] + gust \
+                + 0.20 * math.sin(2 * math.pi * f1 * now + p1) \
+                + 0.14 * math.sin(2 * math.pi * f2 * now + p2) \
+                + 0.05 * math.sin(2 * math.pi * f3 * now + p3)
+            v = max(0.0, min(1.0, v))
+            v = v * v                     # bias toward dim, sharper flare events
+            out[u] = self._ramp(v)
+        return out
+
+
 # ---- frame writer ---------------------------------------------------
 class FramePump:
-    """Owns a device handle and pushes repeated frames at a target Hz."""
+    """Owns a device handle and pushes repeated frames at a target Hz.
+    Survives device drops by re-discovering + re-initialising the keyboard
+    (dongle replug, BT blink) instead of dying."""
 
     def __init__(self, device, opcode, keys, effect, hz=24):
         self.dev = device
@@ -173,6 +234,7 @@ class FramePump:
         self.effect = effect
         self.period = 1.0 / hz
         self._stop = False
+        self._reconnects = 0
 
     def stop(self):
         self._stop = True
@@ -182,10 +244,48 @@ class FramePump:
         entries = [(u, *colors.get(u, (0, 0, 0))) for u in self.keys]
         self.dev.send_direct_frame(self.opcode, entries)
 
+    def _rescue(self):
+        """Reconnect after a device error (silent best-effort)."""
+        import sys as _sys
+        try:
+            self.dev.close()
+        except Exception:
+            pass
+        for attempt in range(6):
+            time.sleep(0.7 * (attempt + 1))
+            try:
+                from . import device as _D
+                devs = _D.find_control_devices()
+                if not devs:
+                    continue
+                fresh = _D.ApexDevice(devs[0], verbose=self.dev.verbose)
+                fresh.connect()
+                self.dev = fresh
+                self._reconnects += 1
+                once_more = self.dev.send_direct_frame(self.opcode,
+                    [(u, *self.effect.tick(time.monotonic()).get(u, (0, 0, 0))) for u in self.keys])
+                if once_more is not None:
+                    return True
+            except Exception:
+                continue
+        return False
+
     def run(self, stop_after=None):
         t0 = time.monotonic()
+        fails = 0
         while not self._stop:
-            self.once()
+            try:
+                self.once()
+                fails = 0
+            except Exception:
+                fails += 1
+                if fails <= 2:
+                    time.sleep(0.1)
+                    continue
+                if not self._rescue():
+                    self._stop = True
+                    break
+                fails = 0
             time.sleep(self.period)
             if stop_after is not None and time.monotonic() - t0 > stop_after:
                 break

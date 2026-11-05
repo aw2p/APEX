@@ -61,9 +61,9 @@ def _mkparser():
     sub.add_parser("keys", help="list all known key names + usage bytes")
 
     p = sub.add_parser("effect", help="run a software effect (Ctrl-C releases the LEDs)")
-    p.add_argument("name", choices=["static", "breathing", "spectrum", "wave", "reactive"])
-    p.add_argument("--color", default="red")
-    p.add_argument("--hz", type=float, default=24.0)
+    p.add_argument("name", choices=["static", "breathing", "spectrum", "wave", "reactive", "candle"])
+    p.add_argument("--color", default="red", help="for static/breathing/reactive (candle ignores it)")
+    p.add_argument("--hz", type=float, default=18.0)
     p.add_argument("--seconds", type=float, default=None, help="debug: stop after N seconds")
     p.add_argument("--evdev", default=None, help="input event node for reactive (e.g. /dev/input/event4)")
 
@@ -324,6 +324,8 @@ def cmd_effect(args):
     listener = None
     if args.name == "static":
         fx = E.Static(ks, c)
+    elif args.name == "candle":
+        fx = E.Candle(ks)
     elif args.name == "breathing":
         fx = E.Breathing(ks, c)
     elif args.name == "spectrum":
