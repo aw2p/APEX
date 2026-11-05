@@ -1,21 +1,24 @@
-# Apex Pro Mini Wireless (and close relatives) —— grant the desktop user
-# access to the vendor/lighting hidraw interface via the `input` group
-# (the user is already a member).
-#
-# These are READ/WRITE nodes only: it does NOT grant root, and it does not
-# touch any device other than SteelSeries vendor keyboard interfaces.
-#
-# Vendor:  SteelSeries ApS            1038
-#
-# Wired dongle for Apex Pro Mini Wireless . . . . . . . . . 0x1624
-# Bluetooth / wireless direct keyboard . . . . . . . . . .  0x1626
-# (2024 gen + wired mini, same engine family, added for robustness)
-# Apex Pro Mini . . . . . . . . . . . . . . . . . . . . .  0x161E/0x1621
-# Apex Pro Mini (2024) . . . . . . . . . . . . . . . . . .  0x1648
-# Apex 9 Mini (same lighting recipe, useful reference) . .  0x1620
-# Apex Pro TKL 2023 Wireless / Gen 3 (same transport) . . . 0x1630/0x1632/0x1644/0x1646
 
-ACTION=="add", SUBSYSTEM=="hidraw", DRIVERS=="hid-generic", \
-  ATTRS{idVendor}=="1038", \
-  ATTRS{idProduct}=="161e|1620|1621|1624|1630|1632|1644|1646|1648|1626", \
-  MODE="0660", GROUP="input", TAG+="uaccess"
+# Apex / SteelSeries keyboard hidraw access for the local user session
+# (only the keyboard-family PIDs; headsets and mice are NOT matched).
+# Diagnostic shortcut: instead of guessing one match each, these lines use
+# a restrictive vendor+product pair per line.
+
+# --- Apex Pro Mini Wireless family (user's device: dongle 1624) ---
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1624", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1626", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="161e", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1621", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1620", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1648", MODE="0660", GROUP="input"
+
+# --- Apex-Pro-TKL 2023 / Gen3 family (same protocol engine) ---
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1628", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1630", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1632", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1642", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1644", MODE="0660", GROUP="input"
+SUBSYSTEM=="hidraw", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1038", ATTRS{idProduct}=="1646", MODE="0660", GROUP="input"
+
+# Safety statement: headsets etc. keep stock permissions (root-only, i.e. NOT
+# rust reachable). If something else is needed the line is explicit and new.

@@ -239,8 +239,9 @@ class ApexDevice:
         return self
 
     def pick_opcode_candidates(self):
-        """Opcode candidates ordered by current understanding; wired endings
-        use 0x40 then 0x3A; wireless dongle为首 0x61 then 0x40 then 0x3A."""
+        """Opcode candidates ordered by current understanding (hardware
+        validated 2026-11-05 on the 1624 dongle: 0x61 lights the board with
+        status-ACK; 0x40/0x3A get ACKed but cause no visible change)."""
         t = self.entry.transport
         if t == "wireless":
             return [P.OP_DIRECT_WIRELESS, P.OP_DIRECT, P.OP_LEGACY_DIRECT]

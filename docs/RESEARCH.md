@@ -135,7 +135,20 @@ tests enforce that these cannot sneak in even from code I don't write.
   confirmation that the flash-erase/programming area is genuinely risky
   territory we stay out of.
 
-## 8. Sources
+## 8. Hardware-validated wire facts (2026-11-05, on the dongle 0x1624)
+
+* feature init `00 4B` (65 B): ACK `[4B 00 …]`.
+* direct frame `00 61` at 642 B, count=112: ACK `[61 00 70 …]` and the whole
+  board visibly changed colour.  **This is the one that lights the keys.**
+* direct frame `00 40` at 642 B: ACK `[40 00 70 …]` but board ignored it.
+* legacy `00 3A`: sent, no colour change (reply echoes unrelated data).
+* release `00 62`: ACK; lighting returns to on-board profile.
+* battery: `00 D2` → `[D2 <data> 00 00 02 …]` (first data byte was 0x14=20 —
+  likely battery percentage or raw gauge; calibrate later).
+* unanswered on this channel (needs more experiments): `90` firmware, `A3`
+  brightness read.
+
+## 9. Sources
 
 * OpenRGB `SteelSeriesApexController.{h,cpp}` (GitHub mirror,
   commit 19112cde) — frame layout, opcodes 0x3A/0x40/0x61, PF lengths, init.
