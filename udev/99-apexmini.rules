@@ -1,0 +1,21 @@
+# Apex Pro Mini Wireless (and close relatives) —— grant the desktop user
+# access to the vendor/lighting hidraw interface via the `input` group
+# (the user is already a member).
+#
+# These are READ/WRITE nodes only: it does NOT grant root, and it does not
+# touch any device other than SteelSeries vendor keyboard interfaces.
+#
+# Vendor:  SteelSeries ApS            1038
+#
+# Wired dongle for Apex Pro Mini Wireless . . . . . . . . . 0x1624
+# Bluetooth / wireless direct keyboard . . . . . . . . . .  0x1626
+# (2024 gen + wired mini, same engine family, added for robustness)
+# Apex Pro Mini . . . . . . . . . . . . . . . . . . . . .  0x161E/0x1621
+# Apex Pro Mini (2024) . . . . . . . . . . . . . . . . . .  0x1648
+# Apex 9 Mini (same lighting recipe, useful reference) . .  0x1620
+# Apex Pro TKL 2023 Wireless / Gen 3 (same transport) . . . 0x1630/0x1632/0x1644/0x1646
+
+ACTION=="add", SUBSYSTEM=="hidraw", DRIVERS=="hid-generic", \
+  ATTRS{idVendor}=="1038", \
+  ATTRS{idProduct}=="161e|1620|1621|1624|1630|1632|1644|1646|1648|1626", \
+  MODE="0660", GROUP="input", TAG+="uaccess"
