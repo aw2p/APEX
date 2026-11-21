@@ -9,6 +9,7 @@ Both the CLI (reactive) and the GUI (preview + engine) use this.
 
 import glob
 import os
+import re
 import select
 import struct
 import sys
@@ -16,21 +17,17 @@ import threading
 
 
 def find_keyboard_event_nodes(vid="1038"):
-    """evdev nodes belonging to our SteelSeries keyboard (any 16xx pid)."""
+    """evdev nodes belonging to our SteelSeries keyboard (any 1038:16xx pid —
+    covers wired/dongle/BT re-enumerations; headsets/mice are 1290/18xx+)."""
     nodes = []
+    pat = re.compile(r"1038:16[0-9A-Fa-f]{2}\.")
     for dev in os.listdir("/sys/class/hidraw"):
         path = os.path.realpath(os.path.join("/sys/class/hidraw", dev))
         parent = os.path.dirname(os.path.dirname(path))   # 0003:1038:XXXX dir
-        if ":1038:" not in parent or "1624" not in parent:
+        if not pat.search(parent):
             continue
-        base = parent
-        while base and base != "/" and not os.path.isdir(os.path.join(base, "input")):
-            base = os.path.dirname(base)
-        if not base or base == "/":
-            continue
-        for inp in os.listdir(os.path.join(base, "input")):
-            for cand in glob.glob(os.path.join(base, "input", inp, "event*")):
-                nodes.append("/dev/" + os.path.basename(cand))
+        for cand in glob.glob(os.path.join(parent, "input", "input*", "event*")):
+            nodes.append("/dev/" + os.path.basename(cand))
     return nodes
 
 

@@ -21,9 +21,11 @@ import os
 OP_LEGACY_DIRECT = 0x3A          # Apex 7/Pro/5/7-TKL "gen 1" direct lighting
 OP_DIRECT = 0x40                 # Apex 2023/Gen 3 wired direct lighting
 OP_DIRECT_WIRELESS = 0x61        # 2023 wireless (dongle, and USB-cable on 1646)
+OP_DIRECT_CABLE = 0x21           # wireless board on USB cable (= wireless − 0x40)
 OP_INIT = 0x4B                   # enables direct frames (>= fw 1.19.7 family)
 OP_CLEAR = 0x41                  # drop direct ownership on wired gen3
 OP_RELEASE_WIRELESS = 0x62       # drop direct ownership on wireless (dongle)
+OP_RELEASE_CABLE = 0x22          # drop direct ownership on USB-cable mode
 OP_PROFILE = 0x89                # select onboard profile slot 1..5
 OP_FIRMWARE = 0x90               # firmware string query
 OP_BRIGHTNESS_SET = 0x23         # hardware brightness 0..10
@@ -114,6 +116,8 @@ def build_release(transport):
     """'stop owning the LEDs' packet per transport."""
     if transport == "wireless":
         return build_control(OP_RELEASE_WIRELESS)
+    if transport == "usb":
+        return build_control(OP_RELEASE_CABLE)
     return build_control(OP_CLEAR)
 
 

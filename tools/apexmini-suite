@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# apexmini-suite launcher: uses the Qt venv when present, falls back to system python.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ -x "$HERE/venv-qt/bin/python" ]; then
+  exec "$HERE/venv-qt/bin/python" -c \
+    "import sys; sys.path.insert(0, '$HERE/src'); from apexmini_gui.__main__ import main; sys.exit(main())" "$@"
+else
+  exec python3 -c \
+    "import sys; sys.path.insert(0, '$HERE/src'); from apexmini_gui.__main__ import main; sys.exit(main())" "$@"
+fi

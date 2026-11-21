@@ -30,14 +30,14 @@ KNOWN_INTERESTING_PIDS = {
     0x1620: ("Apex 9 Mini", "wired"),
     0x1621: ("Apex Pro Mini (wired 2)", "wired"),
     0x1624: ("Apex Pro Mini Wireless (Dongle)", "wireless"),
-    0x1626: ("Apex Pro Mini Wireless", "bt"),
+    0x1626: ("Apex Pro Mini Wireless (USB cable)", "usb"),
     0x1614: ("Apex Pro TKL", "wired"),
     0x1628: ("Apex Pro TKL (2023)", "wired"),
     0x1630: ("Apex Pro TKL (2023) Wireless", "wireless"),
     0x1632: ("Apex Pro TKL (2023) Wireless", "wireless"),
     0x1642: ("Apex Pro TKL Gen 3", "wired"),
     0x1644: ("Apex Pro TKL Wireless Gen 3 (Dongle)", "wireless"),
-    0x1646: ("Apex Pro TKL Wireless Gen 3", "wireless"),
+    0x1646: ("Apex Pro TKL Wireless Gen 3", "usb"),
 }
 
 USAGE_PAGE_CONTROL = 0xFFC0
@@ -239,10 +239,13 @@ class ApexDevice:
         return self
 
     def pick_opcode_candidates(self):
-        """Opcode candidates ordered by current understanding (hardware
-        validated 2026-11-05 on the 1624 dongle: 0x61 lights the board with
-        status-ACK; 0x40/0x3A get ACKed but cause no visible change)."""
+        """Opcode candidates ordered by hardware-verified knowledge:
+        dongle 0x1624 → 0x61 (verified lit); USB-cable 0x1626 → 0x21
+        (verified lit; = wireless − 0x40 translation from OpenGG's tables);
+        wired family → 0x40 then legacy."""
         t = self.entry.transport
         if t == "wireless":
             return [P.OP_DIRECT_WIRELESS, P.OP_DIRECT, P.OP_LEGACY_DIRECT]
+        if t == "usb":
+            return [P.OP_DIRECT_CABLE, P.OP_DIRECT_WIRELESS, P.OP_DIRECT, P.OP_LEGACY_DIRECT]
         return [P.OP_DIRECT, P.OP_LEGACY_DIRECT]
