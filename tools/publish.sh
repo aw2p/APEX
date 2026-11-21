@@ -57,6 +57,6 @@ if git remote get-url origin >/dev/null 2>&1; then
   echo "✓ pushed to $(git remote get-url origin)"
 else
   gh repo create "$REPO_NAME" --public --source=. --push \
-    --description "APEX — Ambient Per-key Effects Xecutor · Apex Pro Mini Wireless lighting suite for Linux"
+    --description "APEX — Adaptive Peripheral Effect Xecutor · Apex Pro Mini Wireless lighting suite for Linux"
   echo "✓ created and pushed: https://github.com/$LOGIN/$REPO_NAME"
 fi

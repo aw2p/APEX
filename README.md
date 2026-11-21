@@ -1,25 +1,25 @@
 # APEX
 
-**A**mbient **P**er-key **E**ffects **X**ecutor — a lighting suite for the
+**A**daptive **P**eripheral **E**ffect **X**ecutor — a lighting suite for the
 SteelSeries **Apex Pro Mini Wireless** (and protocol-siblings) on Linux.
 
 SteelSeries only ships lighting configuration for Windows. APEX talks to the
-keyboard's HID control interface directly: no GG, no VM, no Windows. Real
-per-key RGB, software effects streamed at your chosen fps, reactive typing
-flashes, and a Metalheart/Neo-Vectorheart GUI with a fake-3D keyboard
-preview that mirrors the board in real time.
+keyboard's HID control interface directly: no GG, no VM, no Windows. Whole-board
+colours, streamed software effects, reactive typing, and a Metalheart /
+Neo-Vectorheart GUI with a liquid-metal background and a keyboard preview that
+breathes with the board.
 
-![APEX suite](docs/assets/hero.png)
+![APEX suite](docs/assets/preview.gif)
 
 ## What you get
 
 | | |
 |---|---|
-| **Per-key RGB** | any key, any colour, whole-board or subsets — hardware-verified `0x61`/`0x21` direct frames |
+| **Lighting** | any colour, whole board — hardware-verified `0x61`/`0x21` direct frames |
 | **Profiles** | JSON files in `~/.config/apexmini/profiles/`; save / import / export / switch on the fly |
 | **Effects** | static, gradient, breathing, spectrum, wave, candle (per-key organic flicker) |
-| **Reactive typing** | any keypress flashes that key with configurable decay — on the board *and* the GUI preview |
-| **GUI** | fake-3D keyboard preview, ambient plasma glow, adaptive neon accents, system tray with profile menu |
+| **Reactive typing** | keypresses flash across the board with configurable decay — on the keyboard *and* the GUI preview |
+| **GUI** | liquid-metal background, chrome shard field, keyboard preview in two render styles (real-3D / stylized), adaptive neon accents, system tray with profile menu |
 | **Daemon** | headless background mode that survives replug/sleep and switches profiles from the CLI or tray |
 | **Safety** | the packet builder structurally refuses all profile/flash opcodes — APEX never touches onboard storage |
 
@@ -48,7 +48,6 @@ The CLI/daemon/protocol core has **zero dependencies** beyond libhidapi.
 tools/apexmini list                  # enumerate keyboard control endpoints
 tools/apexmini info                  # firmware / battery / brightness probe
 tools/apexmini color ff6600          # solid colour
-tools/apexmini key a=ff0000 s=ff0000 # per-key
 tools/apexmini effect candle         # streamed effect (Ctrl-C → profile)
 tools/apexmini onboard               # hand LEDs back to on-board firmware
 
@@ -59,10 +58,11 @@ tools/apexmini-suite stop            # release LEDs, stop daemon
 
 ### GUI
 
-`tools/apexmini-suite` — builder on the right (animation, palette, speed,
-brightness, reactive flash + decay), profile bank at the bottom, tray icon
-for switching with the window closed. Closing the window keeps lighting in
-the background (checkbox in the status bar).
+`tools/apexmini-suite` — profile builder on the right (animation, palette,
+speed, brightness, reactive flash + decay), profile bank at the bottom, tray
+icon for switching with the window closed. Closing the window keeps lighting
+in the background (checkbox in the status bar). Scroll wheel zooms the
+keyboard preview; panels collapse via their header chevrons.
 
 ## Hardware support status
 
@@ -94,7 +94,7 @@ keyboard's own firmware profile.
 
 ```
 src/apexmini/         protocol core (hidapi ctypes, packet builders, engine)
-src/apexmini_gui/     Qt suite (theme, 3D preview, builder, bank, tray, daemon)
+src/apexmini_gui/     Qt suite (theme, GL background + 3D pass, panels, tray, daemon)
 tools/                launchers + RE helpers (probe, render, tests)
 docs/                 RESEARCH.md, RUNBOOK-TESTING.md, cheatsheet.md
 tests/                offline unit tests (no hardware needed)
