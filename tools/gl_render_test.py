@@ -24,8 +24,14 @@ from PySide6.QtWidgets import QApplication
 from apexmini_gui import background_gl as BGL
 
 
+def hex3(h):
+    h = h.lstrip("#")
+    return (int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255)
+
+
 def render(out_path, t=1.7, mx=0.5, my=0.45, W=1180, H=680,
            accent_a="#22d3ee", accent_b="#ff2bd6"):
+    """Render ONLY the liquid-metal background shader (headless)."""
     app = QApplication.instance() or QApplication([])
     fmt = QSurfaceFormat()
     fmt.setVersion(3, 3)
@@ -38,81 +44,16 @@ def render(out_path, t=1.7, mx=0.5, my=0.45, W=1180, H=680,
     ctx.setFormat(fmt)
     ok = ctx.create()
     if not ok:
-        # retry without a pinned version (driver may refuse 3.3 core here)
         ctx = QOpenGLContext()
         ctx.setFormat(QSurfaceFormat())
         ok = ctx.create()
         assert ok, "no GL context (even unpinned)"
     assert ctx.makeCurrent(surface), "makeCurrent failed"
-    print("GL:", QOpenGLContext.currentContext().format().version())
     f = ctx.functions()
 
     prog = QOpenGLShaderProgram()
-    src = BGL.FRAG_SRC
-    dbg = os.environ.get("GL_DEBUG", "")
-    REPL_TARGET = "    col *= u_intensity;\n    gl_FragColor = vec4(col, 1.0);"
-    if dbg == "1":
-        src = src.replace(REPL_TARGET, "    gl_FragColor = vec4(v_uv.x, v_uv.y, 0.0, 1.0);")
-    elif dbg == "2":
-        src = src.replace(REPL_TARGET, "    gl_FragColor = vec4(vec3(f), 1.0);")
-    elif dbg == "3":
-        src = src.replace(REPL_TARGET, "    gl_FragColor = vec4(vec3(noise(uv * 8.0)), 1.0);")
-    elif dbg == "4":
-        src = src.replace(REPL_TARGET, "    gl_FragColor = vec4(vec3(hash(uv * 8.0)), 1.0);")
-    elif dbg == "5":
-        src = src.replace(REPL_TARGET, "    gl_FragColor = vec4(chrome_env(m, f), 1.0);")
-    elif dbg == "6":
-        src = src.replace(REPL_TARGET, "    gl_FragColor = vec4(vec3(vcell.y * 8.0), 1.0);")
-    elif dbg == "7":
-        src = src.replace(
-            "    // ---- the shard burst: one large object at center ----\n"
-            "    for (int i = 0; i < 9; i++) {\n"
-            "        vec4 bl = blade(p * vec2(aspect * 0.92, 1.0) * 0.62, float(i));\n"
-            "        col = mix(col, bl.rgb, bl.a);\n"
-            "    }",
-            "    vec3 acc = vec3(0.0);\n"
-            "    for (int i = 0; i < 9; i++) {\n"
-            "        vec4 bl = blade(p * vec2(aspect * 0.92, 1.0) * 0.62, float(i));\n"
-            "        acc = mix(acc, bl.rgb, bl.a);\n"
-            "    }\n"
-            "    gl_FragColor = vec4(acc, 1.0);\n"
-            "    return;")
-    elif dbg == "9":
-        src = src.replace(
-            "    // ---- aggressive voronoi bevels (background texture) ----",
-            "    gl_FragColor = vec4(col, 1.0); return;")
-    elif dbg == "10":
-        src = src.replace(
-            "    // ---- the shard burst: one large object at center ----",
-            "    gl_FragColor = vec4(col, 1.0); return;")
-    elif dbg == "11":
-        src = src.replace(
-            "    // ---- anamorphic lens flare ----",
-            "    gl_FragColor = vec4(col, 1.0); return;")
-    elif dbg == "12":
-        src = src.replace(
-            "    // vignette + film grain (keep the rawness)",
-            "    gl_FragColor = vec4(col, 1.0); return;")
-    elif dbg == "13":
-        before = len(src)
-        src = src.replace(
-            "    col += (hash(uv * u_res + fract(u_time)) - 0.5) * 0.035;",
-            "")
-        print("d13 replace changed source:", len(src) != before)
-    elif dbg == "14":
-        before = len(src)
-        src = src.replace(
-            "    col *= 0.55 + 0.45 * vig;",
-            "")
-        print("d14 replace changed source:", len(src) != before)
-    elif dbg == "15":
-        src = src.replace(REPL_TARGET, "    gl_FragColor = vec4(vec3(vig), 1.0);")
-    elif dbg == "16":
-        src = src.replace("    col *= u_intensity;", "    col *= 1.0;")
-    elif dbg == "17":
-        src = src.replace("    col *= u_intensity;", "    col *= 0.5 + 0.5 * u_intensity;")
     prog.addShaderFromSourceCode(QOpenGLShader.Vertex, BGL.VERT_SRC)
-    ok = prog.addShaderFromSourceCode(QOpenGLShader.Fragment, src)
+    ok = prog.addShaderFromSourceCode(QOpenGLShader.Fragment, BGL.FRAG_SRC)
     if not ok:
         print(prog.log())
         sys.exit(1)
@@ -121,10 +62,6 @@ def render(out_path, t=1.7, mx=0.5, my=0.45, W=1180, H=680,
     prog.bind()
     u = {n: prog.uniformLocation(n) for n in
          ("u_res", "u_time", "u_mouse", "u_accentA", "u_accentB", "u_intensity")}
-
-    def hex3(h):
-        h = h.lstrip("#")
-        return (int(h[0:2], 16) / 255, int(h[2:4], 16) / 255, int(h[4:6], 16) / 255)
 
     from PySide6.QtOpenGL import QOpenGLFramebufferObject
     fbo = QOpenGLFramebufferObject(W, H)

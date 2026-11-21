@@ -14,8 +14,8 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QEvent, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QBrush
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QColorDialog, QComboBox, QFileDialog, QFrame,
     QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -30,26 +30,21 @@ from apexmini import profiles as PR           # noqa: E402
 from apexmini import engine as EN             # noqa: E402
 from apexmini import inputfeed                # noqa: E402
 from apexmini_gui import theme                # noqa: E402
-from apexmini_gui import keyboard3d as K3     # noqa: E402
 from apexmini_gui import daemon as DM         # noqa: E402
 from apexmini_gui import background_gl as BGL  # noqa: E402
 
 
 class PreviewWidget(QWidget):
-    """Hosts the fake-3D keyboard, repaints at ~30 fps.  Fully transparent —
-    the GL liquid-metal background shows through; mouse moves the light and
-    makes the board lean."""
+    """Transparent overlay that paints the key legends at the REAL 3D
+    projected positions (the keycaps themselves render in the GL pass)."""
 
     def __init__(self, engine, parent=None):
         super().__init__(parent)
         self.engine = engine
-        self.k3d = K3.Keyboard3DPreview(self)
         self.accent_a, self.accent_b = theme.CYAN, theme.MAGENTA
-        self.setMinimumHeight(320)
-        self._t0 = time.monotonic()
         self._mouse = (0.5, 0.45)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         self.setMouseTracking(True)
-
         self.timer = QTimer(self)
         self.timer.setInterval(33)
         self.timer.timeout.connect(self._tick)
@@ -62,28 +57,39 @@ class PreviewWidget(QWidget):
         self._mouse = (mx, my)
 
     def _tick(self):
-        colors = self.engine.colors()
-        self.k3d.colors = colors
-        # smooth lean toward the mouse
-        tx, ty = self._mouse
-        cy, cp = self.k3d.lean
-        self.k3d.lean = (cy + ((tx - 0.5) * 0.16 - cy) * 0.12,
-                         cp + (((1.0 - ty) - 0.5) * 0.10 - cp) * 0.12)
-        self.k3d.light_pos = self._mouse
-        # decay press glows
-        for u in list(self.k3d.press_glow):
-            self.k3d.press_glow[u] *= 0.92
-            if self.k3d.press_glow[u] < 0.02:
-                del self.k3d.press_glow[u]
+        w = self.window()
+        bg = getattr(w, "background", None)
+        if bg is None:
+            return
+        # lean the camera with the mouse
+        bg.set_lean((self._mouse[0] - 0.5) * 0.42, ((1.0 - self._mouse[1]) - 0.5) * 0.30)
+        bg.set_key_colors(self.engine.colors())
         self.update()
-
-    def key_pressed(self, usage):
-        self.k3d.press_glow[usage] = 1.0
 
     def paintEvent(self, ev):
         p = QPainter(self)
-        self.k3d.paint(p, self.width(), self.height(), self.accent_a, self.accent_b,
-                       time.monotonic() - self._t0)
+        w = self.window()
+        bg = getattr(w, "background", None)
+        if bg is None or not hasattr(bg, "legend_positions"):
+            p.end()
+            return
+        p.setRenderHint(QPainter.Antialiasing, True)
+        f = p.font()
+        f.setBold(False)
+        p.setFont(f)
+        for (x, y, usage) in bg.legend_positions():
+            if x < 0 or y < 0 or x > self.width() or y > self.height():
+                continue
+            c = self.engine.colors().get(usage, (20, 22, 28))
+            lum = c[0] * 0.3 + c[1] * 0.6 + c[2] * 0.1
+            label = K3.K.name_for_usage(usage)
+            f2 = p.font()
+            f2.setPixelSize(11)
+            p.setFont(f2)
+            p.setPen(QPen(QColor(0, 0, 0, 160)))
+            p.drawText(QRectF(x - 20 + 1, y - 8 + 1, 40, 16), Qt.AlignCenter, label)
+            p.setPen(QPen(QColor(235, 242, 250, 150 if lum < 90 else 230)))
+            p.drawText(QRectF(x - 20, y - 8, 40, 16), Qt.AlignCenter, label)
         p.end()
 
 
@@ -482,6 +488,10 @@ class MainWindow(QMainWindow):
         self.preview.set_accents(aa, ab)
         if hasattr(self.background, "set_accents"):
             self.background.set_accents(aa, ab)
+        if hasattr(self.builder, "set_accents"):
+            self.builder.set_accents(aa)
+        if hasattr(self.bank, "set_accents"):
+            self.bank.set_accents(aa)
         QApplication.instance().setStyleSheet(theme.build_qss(aa, ab))
 
     # ---- streaming / daemon ---------------------------------------------
@@ -499,7 +509,7 @@ class MainWindow(QMainWindow):
 
     def _on_key(self, usage):
         self.engine.note_press(usage)
-        self.preview.key_pressed(usage)
+        self.engine.note_press(usage)   # reactive colour handled in-engine (GL keys)
 
     def _refresh_tray(self):
         if self.tray:
@@ -601,6 +611,128 @@ class TrayController:
         self.menu.removeAction(self.profile_header)
         self.menu.insertAction(self.profile_menu_actions[0] if self.profile_menu_actions
                                else self.quit_act, self.profile_header)
+
+
+class ChromePanel(QFrame):
+    """Custom-painted Metalheart panel: beveled translucent glass, notched
+    corner, accent tick, letterspaced title, drop shadow, collapse chevron."""
+
+    HEADER_H = 34
+
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self._title = title.upper()
+        self._accent = theme.CYAN
+        self._collapsed = False
+        self.setObjectName("chrome")
+        self.setFrameShape(QFrame.NoFrame)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.header = QWidget(self)
+        self.header.setFixedHeight(self.HEADER_H)
+        self.header.setStyleSheet("background: transparent;")
+        hl = QHBoxLayout(self.header)
+        hl.setContentsMargins(12, 0, 6, 0)
+        self.title_label = QLabel(self._title)
+        self.title_label.setStyleSheet(
+            "background: transparent; color: %s; font-weight: 600; "
+            "letter-spacing: 2px; font-size: 13px;" % theme.CYAN)
+        hl.addWidget(self.title_label)
+        hl.addStretch(1)
+        self.collapse_btn = QPushButton("▾")
+        self.collapse_btn.setFixedSize(26, 24)
+        self.collapse_btn.setCursor(Qt.PointingHandCursor)
+        self.collapse_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: %s; border: none; font-size: 13px; }"
+            "QPushButton:hover { color: #fff; }" % theme.CYAN)
+        self.collapse_btn.clicked.connect(self.toggle_collapsed)
+        hl.addWidget(self.collapse_btn)
+        outer.addWidget(self.header)
+
+        self.body = QWidget(self)
+        self.body.setStyleSheet("background: transparent;")
+        self.body_lay = QVBoxLayout(self.body)
+        self.body_lay.setContentsMargins(12, 6, 12, 12)
+        self.body_lay.setSpacing(8)
+        outer.addWidget(self.body, 1)
+
+        from PySide6.QtWidgets import QGraphicsDropShadowEffect
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(26)
+        shadow.setOffset(0, 6)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        self.setGraphicsEffect(shadow)
+
+    def set_accents(self, a_hex):
+        self._accent = a_hex
+        self.title_label.setStyleSheet(
+            "background: transparent; color: %s; font-weight: 600; "
+            "letter-spacing: 2px; font-size: 13px;" % a_hex)
+        self.collapse_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: %s; border: none; font-size: 13px; }"
+            "QPushButton:hover { color: #fff; }" % a_hex)
+        self.update()
+
+    def toggle_collapsed(self):
+        self._collapsed = not self._collapsed
+        self.body.setVisible(not self._collapsed)
+        self.collapse_btn.setText("▸" if self._collapsed else "▾")
+        if self._collapsed:
+            self.setMinimumHeight(self.HEADER_H + 8)
+            self.setMaximumHeight(self.HEADER_H + 8)
+        else:
+            self.setMinimumHeight(0)
+            self.setMaximumHeight(16777215)
+        self.body_lay.activate()
+
+    def paintEvent(self, ev):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        w, h = self.width(), self.height()
+        path = QPainterPath()
+        notch = 16.0
+        path.moveTo(0, 6)
+        path.quadTo(0, 0, 6, 0)
+        path.lineTo(w - notch, 0)
+        path.lineTo(w, notch)
+        path.lineTo(w, h - 6)
+        path.quadTo(w, h, w - 6, h)
+        path.lineTo(6, h)
+        path.quadTo(0, h, 0, h - 6)
+        path.closeSubpath()
+
+        grad = QLinearGradient(0, 0, 0, h)
+        grad.setColorAt(0.0, QColor(24, 29, 39, 228))
+        grad.setColorAt(0.5, QColor(17, 21, 29, 216))
+        grad.setColorAt(1.0, QColor(11, 14, 20, 230))
+        p.fillPath(path, QBrush(grad))
+
+        # bevel: lit top/left, dark bottom/right
+        p.setPen(QPen(QColor(90, 104, 124, 150), 1))
+        pathL = QPainterPath()
+        pathL.moveTo(0.5, h - 8)
+        pathL.lineTo(0.5, 6)
+        pathL.quadTo(0.5, 0.5, 6, 0.5)
+        pathL.lineTo(w - notch, 0.5)
+        p.drawPath(pathL)
+        p.setPen(QPen(QColor(4, 6, 9, 200), 1))
+        pathD = QPainterPath()
+        pathD.moveTo(w - notch, 0.5)
+        pathD.lineTo(w - 0.5, notch)
+        pathD.lineTo(w - 0.5, h - 8)
+        pathD.quadTo(w - 0.5, h - 0.5, w - 6, h - 0.5)
+        pathD.lineTo(6, h - 0.5)
+        pathD.quadTo(0.5, h - 0.5, 0.5, h - 8)
+        p.drawPath(pathD)
+
+        # accent tick under the header + notch edge highlight
+        p.setPen(QPen(QColor(self._accent), 2))
+        p.drawLine(12, self.HEADER_H - 2, 12 + 26, self.HEADER_H - 2)
+        p.setPen(QPen(QColor(self._accent), 1))
+        p.drawLine(int(w - notch), 1, int(w - 1), int(notch))
+        p.end()
 
 
 def _app_icon():
