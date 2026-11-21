@@ -137,6 +137,111 @@ vec4 blade(vec2 p, float idx) {
     return vec4(col, cov);
 }
 
+// ---- shape field: pipes / shards / plates / pebbles -----------------
+// tapered blade
+float sd_shard(vec2 p, float len, float w) {
+    float y = p.y + 0.25 * p.x * p.x / max(len, 0.001);
+    float dx = max(abs(p.x) - len, 0.0);
+    return length(vec2(dx, y * 3.2)) - w;
+}
+// round pipe
+float sd_pipe(vec2 p, float len, float w) {
+    float dx = clamp(p.x, -len, len);
+    return length(vec2(p.x - dx, p.y)) - w;
+}
+// hex plate
+float sd_plate(vec2 p, float r) {
+    const vec3 k = vec3(-0.866, 0.5, 0.577);
+    p = abs(p);
+    p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy;
+    p -= vec2(clamp(p.x, -k.z * r, k.z * r), r);
+    return length(p) * sign(p.y);
+}
+// fbm-bumped pebble
+float sd_pebble(vec2 p, float r) {
+    return length(p) - r * (0.82 + 0.35 * fbm(p * 4.5 + 17.31));
+}
+
+// shade one chrome shape at signed distance sd with crest width w;
+// sideExtrude: baked 3D — darker gradient toward the local -y (underside)
+vec4 shape_chrome(vec2 lp, float sd, float w, float idx, float fseed) {
+    if (sd > 0.035) return vec4(0.0);
+    float cov = smoothstep(0.035, 0.0, sd);
+    float crest = smoothstep(w * 1.7, 0.0, abs(lp.y));
+    float m = mix(0.12 + 0.55 * fbm(lp * 7.0 + fseed), 0.66, crest);
+    vec3 col = chrome_env(m, fbm(lp * 5.0 + fseed * 2.3));
+    // baked side shading: the lower half of a shape reads as its extruded flank
+    float side = smoothstep(0.0, -w * 1.2, lp.y) * (1.0 - crest);
+    col *= 1.0 - 0.55 * side;
+    // rim bevel
+    float rim = smoothstep(w, w * 0.55, abs(lp.y)) * smoothstep(w * 0.55, w * 0.35, abs(lp.y));
+    col += vec3(1.0) * rim * 0.75;
+    // mouse-driven specular sweep
+    vec3 L = normalize(vec3((u_mouse.x - 0.5) * 2.0 + 0.3 * sin(u_time * 0.17), 0.7, 0.8));
+    col += vec3(1.0) * pow(max(0.0, 1.0 - abs(lp.y) / max(w, 0.004)), 8.0) * 0.22
+         * (0.4 + 0.6 * abs(sin(idx + (u_mouse.x - 0.5) * 3.0)));
+    return vec4(col, cov);
+}
+
+// one drifting clump of shapes; returns accumulated (color, coverage)
+vec4 clump(vec2 p, float idx, float depth) {
+    float t = u_time * 0.05;
+    // jittered-grid placement: guarantees spread without overlap
+    float gi = mod(idx, 4.0);
+    float gj = floor(idx / 4.0);
+    float h1 = hash(vec2(idx * 3.7, 1.3));
+    float h2 = hash(vec2(idx * 5.1, 7.7));
+    float h3 = hash(vec2(idx * 9.3, 3.9));
+    vec2 base = (vec2(gi + 0.5 + 0.5 * (h1 - 0.5), gj + 0.5 + 0.5 * (h2 - 0.5)) / 4.0 - 0.5)
+              * vec2(3.6, 2.2);
+    // cluster center drifts slowly around its home cell
+    vec2 c = base
+           + 0.16 * vec2(sin(t * (0.10 + 0.08 * h3) + h1 * 9.0),
+                         cos(t * (0.07 + 0.06 * h2) + h2 * 7.0))
+           - (u_mouse - 0.5) * 0.06 * depth;          // depth parallax
+    float rot = t * (0.06 + 0.10 * h1) + h2 * 6.28;
+    float cr = cos(rot), sr = sin(rot);
+    vec3 acc = vec3(0.0);
+    float accov = 0.0;
+    for (int j = 0; j < 4; j++) {
+        float hj = hash(vec2(idx * 13.7, float(j) * 2.9));
+        vec2 o = (vec2(hash(vec2(idx, float(j) + 40.0)),
+                       hash(vec2(idx, float(j) + 80.0))) - 0.5) * vec2(0.9, 0.55);
+        vec2 lp = p - c - o;
+        lp = mat2(cr, -sr, sr, cr) * lp;
+        lp *= depth;                                    // depth scale
+        float kind = fract(h1 * 3.77 + float(j) * 0.29);   // per-clump variety
+        float sd; float w; float len;
+        if (kind < 0.30) {                              // shard
+            len = 0.18 + 0.30 * hj; w = 0.008 + 0.016 * hj;
+            sd = sd_shard(lp, len, w);
+        } else if (kind < 0.55) {                       // pipe
+            len = 0.12 + 0.22 * hj; w = 0.014 + 0.018 * hj;
+            sd = sd_pipe(lp, len, w);
+        } else if (kind < 0.78) {                       // hex plate
+            float r = 0.075 + 0.14 * hj;
+            sd = sd_plate(lp, r);
+            w = r * 0.22;
+        } else {                                        // pebble
+            float r = 0.055 + 0.11 * hj;
+            sd = sd_pebble(lp, r);
+            w = r * 0.5;
+        }
+        // baked 3D: dark extruded copy offset behind the face
+        vec4 sh = shape_chrome(lp + vec2(0.014, -0.022), sd, w, idx, hj * 40.0);
+        if (sh.a > 0.0) {
+            vec3 dark = sh.rgb * 0.22;
+            acc = mix(acc, dark * depth, sh.a * 0.85 * (1.0 - accov));
+            accov = max(accov, sh.a * 0.55);
+        }
+        vec4 face = shape_chrome(lp, sd, w, idx + float(j), hj * 90.0);
+        face.rgb *= mix(0.55, 1.15, depth);             // depth brightness
+        acc = mix(acc, face.rgb, face.a * (1.0 - accov * 0.5));
+        accov = max(accov, face.a * 0.9);
+    }
+    return vec4(acc, min(1.0, accov));
+}
+
 void main() {
     vec2 uv = v_uv;
     float aspect = u_res.x / max(1.0, u_res.y);
@@ -148,31 +253,32 @@ void main() {
     float f  = fbm_at(p * 0.8);
     float fx = fbm_at(p * 0.8 + vec2(e, 0.0));
     float fy = fbm_at(p * 0.8 + vec2(0.0, e));
-    vec3 n = normalize(vec3((f - fx) / e, (f - fy) / e, 1.4));
+    vec3 n = normalize(vec3((f - fx) / e, (f - fy) / e, 2.6));
 
     vec3 view = normalize(vec3(p * 0.35, 1.6));
     vec3 refl = reflect(-view, n);
     float m = clamp(refl.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 col = chrome_env(m, f);
+    m = 0.34 + (m - 0.34) * 0.5;                    // compress bands: calm, dark backdrop
+    vec3 col = chrome_env(m, f * 0.55 + 0.22);
 
     // moving specular (follows mouse = the 'lean' light)
     vec3 L = normalize(vec3((u_mouse.x - 0.5) * 2.2 + sin(u_time * 0.13) * 0.35,
                             0.55 + (u_mouse.y - 0.5) * 1.2, 0.75));
     float spec = pow(max(dot(n, normalize(L + view)), 0.0), 42.0);
-    col += vec3(1.0, 1.0, 1.05) * spec * 1.2;
+    col += vec3(1.0, 1.0, 1.05) * spec * 0.75;
 
     // ---- aggressive voronoi bevels (background texture) ----
     vec2 vcell = voronoi(p * 3.1);
     float edge = vcell.y;
-    col += vec3(0.9, 0.95, 1.0) * smoothstep(0.14, 0.02, edge) * 0.22;
-    col *= 1.0 - 0.45 * smoothstep(0.012, 0.0, edge);
+    col += vec3(0.9, 0.95, 1.0) * smoothstep(0.14, 0.02, edge) * 0.13;
+    col *= 1.0 - 0.30 * smoothstep(0.012, 0.0, edge);
 
-    // ---- the shard burst: one large object at center ----
-    // (the burst lives behind the keyboard overlay: shifted left & low)
-    vec2 bp = (p - vec2(-0.18, -0.10)) / vec2(aspect * 0.92, 1.0) * 1.6;
-    for (int i = 0; i < 9; i++) {
-        vec4 bl = blade(bp, float(i));
-        col = mix(col, bl.rgb, bl.a);
+    // ---- the shape field: drifting clumps of pipes/shards/plates ----
+    // depth-sorted: far clusters first, near ones on top; spread across the screen
+    for (int k = 0; k < 8; k++) {
+        float depth = mix(0.55, 1.35, float(k) / 7.0);
+        vec4 cl = clump(p, float(k) + 7.0, depth);
+        col = mix(col, cl.rgb, cl.a * 0.92);
     }
 
     // ---- ground grid + beams (vectorheart) ----

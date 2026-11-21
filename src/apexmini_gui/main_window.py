@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QColorDialog, QComboBox, QFileDialog, QFrame,
@@ -126,7 +126,7 @@ class BuilderPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("panel")
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 14, 14, 14)
+        lay.setContentsMargins(10, 10, 10, 10)
         lay.setSpacing(10)
 
         title = QLabel("PROFILE BUILDER")
@@ -260,7 +260,7 @@ class BankPanel(QFrame):
         self.setObjectName("panel")
         self.profile_provider = None      # MainWindow wires this to the builder
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 12, 14, 12)
+        lay.setContentsMargins(10, 9, 10, 9)
         lay.setSpacing(8)
 
         head = QHBoxLayout()
@@ -365,8 +365,8 @@ class MainWindow(QMainWindow):
         central.setObjectName("root")
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(10, 10, 10, 6)
-        root.setSpacing(10)
+        root.setContentsMargins(5, 5, 5, 4)
+        root.setSpacing(5)
 
         # liquid-metal background: opaque child of the transparent central,
         # created first so every content widget stacks above it.
@@ -395,6 +395,7 @@ class MainWindow(QMainWindow):
         central.setMouseTracking(True)
 
         mid = QHBoxLayout()
+        mid.setSpacing(5)
         # left: preview
         self.preview = PreviewWidget(self.engine)
         mid.addWidget(self.preview, 3)
@@ -407,7 +408,7 @@ class MainWindow(QMainWindow):
         # bottom: bank
         self.bank = BankPanel()
         self.bank.profile_provider = lambda: self.builder.to_profile()
-        self.bank.setMaximumHeight(180)
+        self.bank.setMaximumHeight(170)
         root.addWidget(self.bank, 1)
 
         # status bar
@@ -439,6 +440,12 @@ class MainWindow(QMainWindow):
         self.marker_timer.setInterval(500)
         self.marker_timer.timeout.connect(self._check_marker)
         self.marker_timer.start()
+
+        # tilt works over EVERY panel: track + filter all child widgets
+        from PySide6.QtCore import QEvent
+        for w in central.findChildren(QWidget):
+            w.setMouseTracking(True)
+            w.installEventFilter(self)
 
         self._load_current()
         self._start_streaming()
@@ -506,6 +513,18 @@ class MainWindow(QMainWindow):
             self.feed.stop()
         self._keep_running = False
         QApplication.instance().quit()
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.MouseMove and self.centralWidget() is not None:
+            gp = ev.globalPosition()
+            cw = self.centralWidget()
+            lp = cw.mapFromGlobal(gp.toPoint())
+            W, H = max(1, cw.width()), max(1, cw.height())
+            mx = max(0.0, min(1.0, lp.x() / W))
+            my = max(0.0, min(1.0, 1.0 - lp.y() / H))
+            self.background.set_mouse(mx, my)
+            self.preview.set_mouse(mx, my)
+        return super().eventFilter(obj, ev)
 
     def _check_marker(self):
         """External switches (CLI `use`, tray in daemon mode) → load them."""

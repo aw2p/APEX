@@ -87,6 +87,7 @@ class Keyboard3DPreview:
     PITCH = math.radians(62)    # how "from above" we look
     BOARD_W = 15.5              # units
     BOARD_H = 5 * 1.12          # units (5 rows, no F row)
+    PLATE_PAD = 0.8             # chassis overhang beyond the keys
 
     def _camera(self):
         yaw = self.YAW + self.lean[0]
@@ -183,7 +184,7 @@ class Keyboard3DPreview:
     def _paint_chassis(self, p, W, H, unit, cs, sn, cp, sp):
         """Gunmetal base plate under the keycaps with a lit edge, corner
         screws and a mirrored reflection below."""
-        pad = 0.45
+        pad = self.PLATE_PAD
         top_pts = [self._project(x, y, self.DEPTH * 0.55, W, H, unit, cs, sn, cp, sp)
                    for x, y in ((-pad, -pad), (self.BOARD_W + pad, -pad),
                                 (self.BOARD_W + pad, self.BOARD_H + pad), (-pad, self.BOARD_H + pad))]

@@ -91,10 +91,10 @@ def build_qss(accent_a=ACCENT_A, accent_b=ACCENT_B):
 QMainWindow, QWidget#root {{ background: {DARK_BG}; }}
 QWidget#root {{ background: transparent; }}
 QFrame#panel {{
-    background: rgba(17, 21, 29, 0.78);
-    border: 1px solid {EDGE};
-    border-top-color: {EDGE_HI};
-    border-left-color: {EDGE_HI};
+    background: rgba(17, 21, 29, 0.88);
+    border: 1px solid #2c333f;
+    border-top-color: #4a5462;
+    border-left-color: #3a424e;
     border-radius: 6px;
 }}
 QLabel {{ background: transparent; }}
