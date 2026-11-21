@@ -69,6 +69,7 @@ class Keyboard3DPreview:
         self.press_glow = {}   # usage -> 0..1 extra glow
         self.lean = (0.0, 0.0)   # (yaw, pitch) offsets from the mouse
         self.light_pos = (0.5, 0.5)   # normalized light position
+        self.zoom = 1.0          # scroll zoom (unit scale)
 
     def _build_keys(self):
         for gy, row in enumerate(LAYOUT):
@@ -108,7 +109,7 @@ class Keyboard3DPreview:
         ys = [p[1] for p in pts]
         w = max(xs) - min(xs)
         h = max(ys) - min(ys)
-        unit = min((W * 0.94) / max(1e-6, w), (H * 0.84) / max(1e-6, h))
+        unit = min((W * 0.94) / max(1e-6, w), (H * 0.84) / max(1e-6, h)) * self.zoom
         # offsets to center the projected bbox
         self._ox = W / 2 - (min(xs) + max(xs)) / 2 * unit
         self._oy = H * 0.52 - (min(ys) + max(ys)) / 2 * unit

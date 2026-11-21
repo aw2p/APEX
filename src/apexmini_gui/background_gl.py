@@ -366,6 +366,8 @@ class LiquidMetalBackground(QOpenGLWidget):
         self._intensity = 1.0
         self._key_colors = {}
         self._lean = (0.0, 0.0)
+        self._zoom = 1.0
+        self._show_keyboard = True
         self._lean_smooth = (0.0, 0.0)
         self._kg = None
         self.setMouseTracking(True)
@@ -392,6 +394,12 @@ class LiquidMetalBackground(QOpenGLWidget):
 
     def set_lean(self, yaw, pitch):
         self._lean = (yaw, pitch)
+
+    def set_zoom(self, z):
+        self._zoom = max(0.5, min(2.2, z))
+
+    def set_show_keyboard(self, show):
+        self._show_keyboard = bool(show)
 
     # -- GL plumbing ---------------------------------------------------
     def initializeGL(self):
@@ -521,7 +529,7 @@ class LiquidMetalBackground(QOpenGLWidget):
         self._prog.release()
 
         # ---- pass 2: the 3D keyboard ----
-        if self._kg and getattr(self, "_kprog", None) and self._kprog.isLinked():
+        if self._show_keyboard and self._kg and getattr(self, "_kprog", None) and self._kprog.isLinked():
           try:
                 kg = self._kg
                 f.glClear(0x00000100)                     # depth buffer
@@ -588,7 +596,7 @@ class LiquidMetalBackground(QOpenGLWidget):
         pitch = math.radians(48) + self._lean_smooth[1]
         kg = self._kg
         target = (kg.BOARD_W / 2, kg.BOARD_H * 0.55, 0.0)
-        dist = 15.0
+        dist = 15.0 / max(0.4, self._zoom)
         eye = (target[0] + dist * math.sin(yaw) * math.cos(pitch),
                target[1] - dist * math.cos(yaw) * math.cos(pitch),
                target[2] + dist * math.sin(pitch))

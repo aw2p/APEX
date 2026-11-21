@@ -32,18 +32,26 @@ from apexmini import inputfeed                # noqa: E402
 from apexmini_gui import theme                # noqa: E402
 from apexmini_gui import daemon as DM         # noqa: E402
 from apexmini_gui import background_gl as BGL  # noqa: E402
+from apexmini_gui import keyboard3d as K3      # noqa: E402  (name lookups for legends)
+from apexmini_gui import settings as SET  # noqa: E402
 
 
 class PreviewWidget(QWidget):
-    """Transparent overlay that paints the key legends at the REAL 3D
-    projected positions (the keycaps themselves render in the GL pass)."""
+    """Transparent overlay.  Two modes:
+      '3d'      — paints key legends at the REAL 3D projected positions
+                  (keycaps render in the GL pass);
+      'stylized'— paints the painter-rendered fake-3D keyboard itself
+                  (the old look), GL draws only the liquid background."""
 
     def __init__(self, engine, parent=None):
         super().__init__(parent)
         self.engine = engine
         self.accent_a, self.accent_b = theme.CYAN, theme.MAGENTA
         self._mouse = (0.5, 0.45)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        self.mode = "3d"
+        self.zoom = 1.0
+        self.k3d = K3.Keyboard3DPreview(self)
+        self._t0 = time.monotonic()
         self.setMouseTracking(True)
         self.timer = QTimer(self)
         self.timer.setInterval(33)
@@ -52,31 +60,48 @@ class PreviewWidget(QWidget):
 
     def set_accents(self, a, b):
         self.accent_a, self.accent_b = a, b
+        self.k3d_ = None
+
+    def set_mode(self, mode):
+        self.mode = "stylized" if mode == "stylized" else "3d"
+        self.update()
 
     def set_mouse(self, mx, my):
         self._mouse = (mx, my)
 
+    def set_zoom(self, z):
+        self.zoom = z
+
+    def key_pressed(self, usage):
+        self.k3d.press_glow[usage] = 1.0
+
     def _tick(self):
         w = self.window()
         bg = getattr(w, "background", None)
-        if bg is None:
-            return
-        # lean the camera with the mouse
-        bg.set_lean((self._mouse[0] - 0.5) * 0.42, ((1.0 - self._mouse[1]) - 0.5) * 0.30)
-        bg.set_key_colors(self.engine.colors())
+        if self.mode == "3d" and bg is not None:
+            bg.set_lean((self._mouse[0] - 0.5) * 0.42, ((1.0 - self._mouse[1]) - 0.5) * 0.30)
+            bg.set_key_colors(self.engine.colors())
+            bg.set_zoom(self.zoom)
         self.update()
 
     def paintEvent(self, ev):
         p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        if self.mode == "stylized":
+            # painter keyboard over the liquid background
+            self.k3d.lean = ((self._mouse[0] - 0.5) * 0.14, ((1.0 - self._mouse[1]) - 0.5) * 0.10)
+            self.k3d.light_pos = self._mouse
+            self.k3d.zoom = self.zoom
+            self.k3d.colors = self.engine.colors()
+            self.k3d.paint(p, self.width(), self.height(), self.accent_a, self.accent_b,
+                           time.monotonic() - self._t0)
+            p.end()
+            return
         w = self.window()
         bg = getattr(w, "background", None)
         if bg is None or not hasattr(bg, "legend_positions"):
             p.end()
             return
-        p.setRenderHint(QPainter.Antialiasing, True)
-        f = p.font()
-        f.setBold(False)
-        p.setFont(f)
         for (x, y, usage) in bg.legend_positions():
             if x < 0 or y < 0 or x > self.width() or y > self.height():
                 continue
@@ -138,6 +163,11 @@ class BuilderPanel(QFrame):
         title = QLabel("PROFILE BUILDER")
         title.setObjectName("title")
         lay.addWidget(title)
+
+        # keyboard render mode
+        self.mode_btn = QPushButton("keyboard: 3D")
+        self.mode_btn.setToolTip("toggle between the real-3D and the stylized painter keyboard")
+        lay.addWidget(self.mode_btn)
 
         # name
         row = QHBoxLayout()
@@ -376,6 +406,17 @@ class MainWindow(QMainWindow):
 
         # liquid-metal background: opaque child of the transparent central,
         # created first so every content widget stacks above it.
+        from apexmini_gui import logo as _logo_mod
+        self.logo_label = QLabel(self)
+        self.logo_label.setStyleSheet("background: transparent;")
+        self.logo_label.setPixmap(_logo_mod.render(128))
+        self.logo_label.setFixedSize(64, 64)
+        self.logo_label.setScaledContents(True)
+        self.logo_label.show()
+        self.logo_label.raise_()
+
+        # liquid-metal background: opaque child of the transparent central,
+        # created first so every content widget stacks above it.
         self.background = BGL.make_background()
         self.background.setParent(central)
         self.background.lower()
@@ -383,6 +424,8 @@ class MainWindow(QMainWindow):
 
         def _central_resize(ev):
             self.background.setGeometry(0, 0, central.width(), central.height())
+            self.logo_label.move(12, 12)
+            self.logo_label.raise_()
             if self._orig_resizeEvent:
                 self._orig_resizeEvent(ev)
         self._orig_resizeEvent = central.resizeEvent
@@ -426,6 +469,10 @@ class MainWindow(QMainWindow):
         self.keep_running_cb.setChecked(True)
         sb.addPermanentWidget(self.keep_running_cb)
 
+        # user settings (keyboard mode, zoom)
+        self.settings = SET.load()
+        self.zoom = self.settings["zoom"]
+
         # wiring
         self.tray = None                       # early: signals may fire during init
         self.builder.changed.connect(self._live_apply)
@@ -452,6 +499,12 @@ class MainWindow(QMainWindow):
         for w in central.findChildren(QWidget):
             w.setMouseTracking(True)
             w.installEventFilter(self)
+
+        # keyboard render mode from settings + toggle handler
+        self.preview.set_mode(self.settings["keyboard_mode"])
+        self.preview.set_zoom(self.zoom)
+        self._update_mode_button()
+        self.builder.mode_btn.clicked.connect(self._toggle_kbd_mode)
 
         self._load_current()
         self._start_streaming()
@@ -509,7 +562,9 @@ class MainWindow(QMainWindow):
 
     def _on_key(self, usage):
         self.engine.note_press(usage)
-        self.engine.note_press(usage)   # reactive colour handled in-engine (GL keys)
+        self.engine.note_press(usage)
+        if self.settings["keyboard_mode"] == "stylized":
+            self.preview.key_pressed(usage)
 
     def _refresh_tray(self):
         if self.tray:
@@ -524,8 +579,28 @@ class MainWindow(QMainWindow):
         self._keep_running = False
         QApplication.instance().quit()
 
+    def _toggle_kbd_mode(self):
+        self.settings["keyboard_mode"] = (
+            "stylized" if self.settings["keyboard_mode"] == "3d" else "3d")
+        self._update_mode_button()
+        self.preview.set_mode(self.settings["keyboard_mode"])
+        SET.save(self.settings)
+
+    def _update_mode_button(self):
+        self.builder.mode_btn.setText(
+            "keyboard: real 3D ⬢  (click → stylized)" if self.settings["keyboard_mode"] == "3d"
+            else "keyboard: stylized ✎  (click → real 3D)")
+
     def eventFilter(self, obj, ev):
         if getattr(self, "_in_filter", False):
+            return False
+        if ev.type() == QEvent.Wheel:
+            dy = ev.angleDelta().y() if hasattr(ev, "angleDelta") else 0
+            if dy:
+                self.zoom = max(0.5, min(2.2, self.zoom * (1.15 if dy > 0 else 1 / 1.15)))
+                self.settings["zoom"] = self.zoom
+                self.preview.set_zoom(self.zoom)
+                SET.save(self.settings)
             return False
         if ev.type() == QEvent.MouseMove and self.centralWidget() is not None:
             gp = ev.globalPosition()
@@ -622,11 +697,14 @@ class ChromePanel(QFrame):
 
     HEADER_H = 34
 
-    def __init__(self, title, parent=None):
+    def __init__(self, title, parent=None, direction="vertical"):
         super().__init__(parent)
         self._title = title.upper()
         self._accent = theme.CYAN
         self._collapsed = False
+        self._direction = direction          # 'vertical' (bank) | 'horizontal' (builder)
+        self._expanded_size = None
+        self._anim = None
         self.setObjectName("chrome")
         self.setFrameShape(QFrame.NoFrame)
 
@@ -644,7 +722,7 @@ class ChromePanel(QFrame):
             "letter-spacing: 2px; font-size: 13px;" % theme.CYAN)
         hl.addWidget(self.title_label)
         hl.addStretch(1)
-        self.collapse_btn = QPushButton("▾")
+        self.collapse_btn = QPushButton("▾" if direction == "vertical" else "▸")
         self.collapse_btn.setFixedSize(26, 24)
         self.collapse_btn.setCursor(Qt.PointingHandCursor)
         self.collapse_btn.setStyleSheet(
@@ -668,6 +746,67 @@ class ChromePanel(QFrame):
         shadow.setColor(QColor(0, 0, 0, 150))
         self.setGraphicsEffect(shadow)
 
+        # gooey border animation (low fps, only while visible)
+        self._phase = 0.0
+        self._goo = QTimer(self)
+        self._goo.setInterval(66)
+        self._goo.timeout.connect(self._goo_tick)
+        self._goo.start()
+
+    def _goo_tick(self):
+        if self.isVisible() and not self._collapsed:
+            self._phase = (self._phase + 0.045) % 1.0
+            self.update()
+
+    def _border_point(self, frac, w, h, notch=16.0):
+        """point along the panel perimeter at fraction 0..1 (clockwise from
+        top-left, following the notched path)."""
+        top_len = w - notch
+        diag_len = notch * 1.414
+        right_len = h - notch
+        bot_len = w - 12
+        left_len = h - 12
+        total = top_len + diag_len + right_len + bot_len + left_len
+        d = frac * total
+        if d < top_len:
+            return d, 0.0
+        d -= top_len
+        if d < diag_len:
+            k = d / diag_len
+            return w - notch + k * notch, k * notch
+        d -= diag_len
+        if d < right_len:
+            return w - 0.0, notch + d
+        d -= right_len
+        if d < bot_len:
+            return w - d, h
+        d -= bot_len
+        if d < left_len:
+            return 0.0, h - d
+        d -= left_len
+        return 0.0, max(0.0, (h - 8) - d * 0.3)
+
+    def _paint_goo(self, p, w, h):
+        """shiny liquid-metal comet riding the border (2 heads + tails)."""
+        c = QColor(self._accent)
+        for k in (0.0, 0.5):
+            frac = (self._phase + k) % 1.0
+            x, y = self._border_point(frac, w, h)
+            r = 16.0
+            g = __import__("PySide6.QtGui", fromlist=["QRadialGradient"]).QRadialGradient(x, y, r)
+            c1 = QColor(self._accent)
+            c1.setAlpha(190)
+            g.setColorAt(0.0, c1)
+            c2 = QColor(255, 255, 255)
+            c2.setAlpha(120)
+            g.setColorAt(0.25, c2)
+            c3 = QColor(self._accent)
+            c3.setAlpha(0)
+            g.setColorAt(1.0, c3)
+            p.setBrush(g)
+            p.setPen(Qt.NoPen)
+            p.drawEllipse(__import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(x, y), r, r)
+
     def set_accents(self, a_hex):
         self._accent = a_hex
         self.title_label.setStyleSheet(
@@ -680,15 +819,47 @@ class ChromePanel(QFrame):
 
     def toggle_collapsed(self):
         self._collapsed = not self._collapsed
-        self.body.setVisible(not self._collapsed)
-        self.collapse_btn.setText("▸" if self._collapsed else "▾")
-        if self._collapsed:
-            self.setMinimumHeight(self.HEADER_H + 8)
-            self.setMaximumHeight(self.HEADER_H + 8)
+        self.collapse_btn.setText(
+            ("▸" if self._collapsed else "▾") if self._direction == "vertical"
+            else ("◂" if self._collapsed else "▸"))
+        if self._direction == "vertical":
+            self._animate("maximumHeight",
+                          self.HEADER_H + 8 if self._collapsed else self._expanded_height())
         else:
-            self.setMinimumHeight(0)
-            self.setMaximumHeight(16777215)
-        self.body_lay.activate()
+            self._animate("maximumWidth",
+                          self.HEADER_H + 8 if self._collapsed else self._expanded_width())
+        QTimer.singleShot(
+            220, lambda: self.body.setVisible(not self._collapsed))
+
+    def _expanded_height(self):
+        if self._expanded_size is None:
+            self._expanded_size = max(self.sizeHint().height(), self.height(), 120)
+        return max(90, self._expanded_size)
+
+    def _expanded_width(self):
+        if self._expanded_size is None:
+            self._expanded_size = max(self.sizeHint().width(), self.width(), 240)
+        return max(150, self._expanded_size)
+
+    def _animate(self, prop, target):
+        from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QAbstractAnimation
+        self._anim = QPropertyAnimation(self, bytes(prop, "utf-8"))
+        self._anim.setDuration(220)
+        self._anim.setStartValue(
+            self.maximumHeight() if prop == "maximumHeight" else self.maximumWidth())
+        self._anim.setEndValue(target)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim.finished.connect(self._anim.deleteLater)
+        self._anim.start(QAbstractAnimation.DeleteWhenStopped)
+        if prop == "maximumHeight":
+            self.setMinimumHeight(min(self.minimumHeight(), target) if self._collapsed else 0)
+            if self._collapsed:
+                self.setMinimumHeight(target)
+        else:
+            if self._collapsed:
+                self.setMinimumWidth(target)
+            else:
+                self.setMinimumWidth(0)
 
     def paintEvent(self, ev):
         p = QPainter(self)
@@ -730,6 +901,8 @@ class ChromePanel(QFrame):
         pathD.quadTo(0.5, h - 0.5, 0.5, h - 8)
         p.drawPath(pathD)
 
+        self._paint_goo(p, w, h)
+
         # accent tick under the header + notch edge highlight
         p.setPen(QPen(QColor(self._accent), 2))
         p.drawLine(12, self.HEADER_H - 2, 12 + 26, self.HEADER_H - 2)
@@ -739,15 +912,8 @@ class ChromePanel(QFrame):
 
 
 def _app_icon():
-    pix = QPixmap(64, 64)
-    pix.fill(QColor("#0a0d12"))
-    p = QPainter(pix)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor("#ff6a00"))
-    p.setPen(QColor("#22d3ee"))
-    p.drawRoundedRect(14, 14, 36, 36, 8, 8)
-    p.end()
-    return QIcon(pix)
+    from apexmini_gui import logo
+    return logo.icon(256)
 
 
 def main(argv=None):
