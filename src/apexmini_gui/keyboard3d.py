@@ -67,6 +67,8 @@ class Keyboard3DPreview:
         self._build_keys()
         self.plasma_t = 0.0
         self.press_glow = {}   # usage -> 0..1 extra glow
+        self.lean = (0.0, 0.0)   # (yaw, pitch) offsets from the mouse
+        self.light_pos = (0.5, 0.5)   # normalized light position
 
     def _build_keys(self):
         for gy, row in enumerate(LAYOUT):
@@ -87,8 +89,9 @@ class Keyboard3DPreview:
     BOARD_H = 5 * 1.12          # units (5 rows, no F row)
 
     def _camera(self):
-        return (math.cos(self.YAW), math.sin(self.YAW),
-                math.cos(self.PITCH), math.sin(self.PITCH))
+        yaw = self.YAW + self.lean[0]
+        pitch = self.PITCH + self.lean[1]
+        return (math.cos(yaw), math.sin(yaw), math.cos(pitch), math.sin(pitch))
 
     def _metrics(self, W, H):
         cs, sn, cp, sp = self._camera()
@@ -151,10 +154,10 @@ class Keyboard3DPreview:
         for key in keys_sorted:
             self._paint_key(p, key, W, H, unit, accent_a, cs, sn, cp, sp)
 
-        # soft vignette to keep focus centered
-        vign = QRadialGradient(QPointF(W * 0.5, H * 0.45), max(W, H) * 0.75)
+        # soft vignette to keep focus centered (gentle — the tall layout needs it)
+        vign = QRadialGradient(QPointF(W * 0.5, H * 0.45), max(W, H) * 1.05)
         vign.setColorAt(0.0, QColor(0, 0, 0, 0))
-        vign.setColorAt(1.0, QColor(0, 0, 0, 130))
+        vign.setColorAt(1.0, QColor(0, 0, 0, 80))
         p.setBrush(QBrush(vign))
         p.setPen(Qt.NoPen)
         p.drawRect(QRectF(0, 0, W, H))
@@ -178,7 +181,8 @@ class Keyboard3DPreview:
             p.drawEllipse(QPointF(cx, cy), r, r)
 
     def _paint_chassis(self, p, W, H, unit, cs, sn, cp, sp):
-        """Gunmetal base plate under the keycaps with a lit edge."""
+        """Gunmetal base plate under the keycaps with a lit edge, corner
+        screws and a mirrored reflection below."""
         pad = 0.45
         top_pts = [self._project(x, y, self.DEPTH * 0.55, W, H, unit, cs, sn, cp, sp)
                    for x, y in ((-pad, -pad), (self.BOARD_W + pad, -pad),
@@ -195,6 +199,22 @@ class Keyboard3DPreview:
             path.closeSubpath()
             return path
 
+        # ---- mirrored reflection under the deck ----
+        rp = QPainterPath()
+        drop = (bot_pts[3][1] - top_pts[3][1]) * 1.6     # positive: below the deck
+        rp.moveTo(bot_pts[3][0], bot_pts[3][1])
+        rp.lineTo(bot_pts[2][0], bot_pts[2][1])
+        rp.lineTo(bot_pts[2][0], bot_pts[2][1] + drop)
+        rp.lineTo(bot_pts[3][0], bot_pts[3][1] + drop)
+        rp.closeSubpath()
+        rgrad = QLinearGradient(QPointF(bot_pts[3][0], bot_pts[3][1]),
+                                QPointF(bot_pts[3][0], bot_pts[3][1] + drop))
+        rgrad.setColorAt(0.0, QColor(90, 110, 135, 42))
+        rgrad.setColorAt(1.0, QColor(20, 26, 36, 0))
+        p.setBrush(QBrush(rgrad))
+        p.setPen(Qt.NoPen)
+        p.drawPath(rp)
+
         # side wall (front) — brushed steel
         wall = QPainterPath()
         wall.moveTo(top_pts[3][0], top_pts[3][1])
@@ -204,7 +224,10 @@ class Keyboard3DPreview:
         wall.closeSubpath()
         grad = QLinearGradient(QPointF(bot_pts[3][0], bot_pts[3][1]), QPointF(top_pts[3][0], top_pts[3][1]))
         grad.setColorAt(0.0, QColor(6, 8, 11))
-        grad.setColorAt(1.0, QColor(38, 44, 55))
+        grad.setColorAt(0.5, QColor(14, 17, 23))
+        grad.setColorAt(0.52, QColor(44, 52, 66))   # brushed edge catch-light
+        grad.setColorAt(0.56, QColor(20, 24, 32))
+        grad.setColorAt(1.0, QColor(40, 47, 60))
         p.setBrush(QBrush(grad))
         p.setPen(QPen(QColor(0, 0, 0, 110), 1))
         p.drawPath(wall)
@@ -230,6 +253,29 @@ class Keyboard3DPreview:
         p.setBrush(QBrush(deck))
         p.setPen(QPen(QColor(90, 105, 125, 90), 1.4))
         p.drawPath(path_of(top_pts))
+
+        # deck sheen band (reflection of the environment carrying color)
+        sheen = QLinearGradient(QPointF(top_pts[0][0], top_pts[1][1]), QPointF(top_pts[3][0], top_pts[3][1]))
+        sheen.setColorAt(0.0, QColor(255, 255, 255, 0))
+        sheen.setColorAt(0.5, QColor(140, 170, 200, 26))
+        sheen.setColorAt(0.52, QColor(200, 220, 245, 40))
+        sheen.setColorAt(0.54, QColor(120, 150, 190, 20))
+        sheen.setColorAt(1.0, QColor(255, 255, 255, 0))
+        p.setBrush(QBrush(sheen))
+        p.setPen(Qt.NoPen)
+        p.drawPath(path_of(top_pts))
+
+        # hex screws in the corners (metalheart hardware detail)
+        for cx, cy in ((top_pts[0][0] + 12, top_pts[0][1] + 14),
+                       (top_pts[1][0] - 12, top_pts[1][1] + 14),
+                       (top_pts[3][0] + 12, top_pts[3][1] - 14),
+                       (top_pts[2][0] - 12, top_pts[2][1] - 14)):
+            r = max(3.0, unit * 0.05)
+            p.setBrush(QColor(70, 80, 95))
+            p.setPen(QPen(QColor(150, 165, 185, 130), 1))
+            p.drawEllipse(QPointF(cx, cy), r, r)
+            p.setPen(QPen(QColor(20, 24, 32, 170), max(1.0, r * 0.35)))
+            p.drawLine(QPointF(cx - r * 0.6, cy), QPointF(cx + r * 0.6, cy))
 
     def _paint_floor_glow(self, p, W, H, accent):
         grad = QLinearGradient(QPointF(0, H * 0.78), QPointF(0, H))
@@ -286,7 +332,7 @@ class Keyboard3DPreview:
             p.drawPath(path)
 
         # top face with a subtle vertical sheen
-        grad = QLinearGradient(QPointF(top[0][0], top[0][1]), QPointF(top[2][0], top[2][1]))
+        grad = QLinearGradient(top[0][0], top[0][1], top[2][0], top[2][1])
         c_hi = QColor(min(255, rgb[0] + 24), min(255, rgb[1] + 24), min(255, rgb[2] + 24))
         grad.setColorAt(0.0, c_hi)
         grad.setColorAt(1.0, base)
@@ -299,6 +345,23 @@ class Keyboard3DPreview:
         p.setPen(QPen(QColor(255, 255, 255, 26), 1))
         p.drawPath(path)
 
+        # chrome specular sweep: a bright diagonal band that follows the light
+        lx, ly = self.light_pos
+        cx = sum(pt[0] for pt in top) / 4.0
+        cy = sum(pt[1] for pt in top) / 4.0
+        d = ((cx / max(1, W)) - lx) * 1.4 + ((cy / max(1, H)) - ly) * 1.0
+        band = max(0.0, 1.0 - abs(d - 0.15) * 3.2)
+        if band > 0.01:
+            sweep = QLinearGradient(top[0][0], top[0][1], top[2][0], top[2][1])
+            a1 = int(70 * band)
+            sweep.setColorAt(0.0, QColor(255, 255, 255, 0))
+            sweep.setColorAt(0.48, QColor(255, 255, 255, a1))
+            sweep.setColorAt(0.52, QColor(255, 255, 255, int(a1 * 1.5)))
+            sweep.setColorAt(1.0, QColor(255, 255, 255, 0))
+            p.setBrush(QBrush(sweep))
+            p.setPen(Qt.NoPen)
+            p.drawPath(path)
+
         # label with a soft shadow for legibility
         if key.usage != K.NAME_TO_USAGE.get("space") and unit > 16:
             cx = sum(pt[0] for pt in top) / 4.0
@@ -308,6 +371,10 @@ class Keyboard3DPreview:
             f.setPixelSize(max(8, int(unit * 0.16)))
             f.setBold(False)
             p.setFont(f)
+            # legend glow: key colour bled into the label
+            glow_col = QColor(min(255, rgb[0] + 60), min(255, rgb[1] + 60), min(255, rgb[2] + 60), 110)
+            p.setPen(QPen(glow_col))
+            p.drawText(QRectF(cx - unit - 1, cy - unit * 0.5 - 1, unit * 2, unit), Qt.AlignCenter, key.label)
             p.setPen(QPen(QColor(0, 0, 0, 150)))
             p.drawText(QRectF(cx - unit + 1, cy - unit * 0.5 + 1, unit * 2, unit), Qt.AlignCenter, key.label)
             col = QColor(235, 242, 250, 110 if lum < 90 else 215)

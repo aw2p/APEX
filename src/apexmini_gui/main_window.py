@@ -32,10 +32,13 @@ from apexmini import inputfeed                # noqa: E402
 from apexmini_gui import theme                # noqa: E402
 from apexmini_gui import keyboard3d as K3     # noqa: E402
 from apexmini_gui import daemon as DM         # noqa: E402
+from apexmini_gui import background_gl as BGL  # noqa: E402
 
 
 class PreviewWidget(QWidget):
-    """Hosts the fake-3D keyboard, repaints at ~30 fps."""
+    """Hosts the fake-3D keyboard, repaints at ~30 fps.  Fully transparent —
+    the GL liquid-metal background shows through; mouse moves the light and
+    makes the board lean."""
 
     def __init__(self, engine, parent=None):
         super().__init__(parent)
@@ -44,6 +47,8 @@ class PreviewWidget(QWidget):
         self.accent_a, self.accent_b = theme.CYAN, theme.MAGENTA
         self.setMinimumHeight(320)
         self._t0 = time.monotonic()
+        self._mouse = (0.5, 0.45)
+        self.setMouseTracking(True)
 
         self.timer = QTimer(self)
         self.timer.setInterval(33)
@@ -53,9 +58,18 @@ class PreviewWidget(QWidget):
     def set_accents(self, a, b):
         self.accent_a, self.accent_b = a, b
 
+    def set_mouse(self, mx, my):
+        self._mouse = (mx, my)
+
     def _tick(self):
         colors = self.engine.colors()
         self.k3d.colors = colors
+        # smooth lean toward the mouse
+        tx, ty = self._mouse
+        cy, cp = self.k3d.lean
+        self.k3d.lean = (cy + ((tx - 0.5) * 0.16 - cy) * 0.12,
+                         cp + (((1.0 - ty) - 0.5) * 0.10 - cp) * 0.12)
+        self.k3d.light_pos = self._mouse
         # decay press glows
         for u in list(self.k3d.press_glow):
             self.k3d.press_glow[u] *= 0.92
@@ -354,6 +368,32 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(10, 10, 10, 6)
         root.setSpacing(10)
 
+        # liquid-metal background: opaque child of the transparent central,
+        # created first so every content widget stacks above it.
+        self.background = BGL.make_background()
+        self.background.setParent(central)
+        self.background.lower()
+        self.background.setMouseTracking(True)
+
+        def _central_resize(ev):
+            self.background.setGeometry(0, 0, central.width(), central.height())
+            if self._orig_resizeEvent:
+                self._orig_resizeEvent(ev)
+        self._orig_resizeEvent = central.resizeEvent
+        central.resizeEvent = _central_resize
+        self._orig_mouse = central.mouseMoveEvent
+
+        def _central_mouse(ev):
+            pos = ev.position()
+            mx = pos.x() / max(1, central.width())
+            my = 1.0 - pos.y() / max(1, central.height())
+            self.background.set_mouse(mx, my)
+            self.preview.set_mouse(mx, my)
+            if self._orig_mouse:
+                self._orig_mouse(ev)
+        central.mouseMoveEvent = _central_mouse
+        central.setMouseTracking(True)
+
         mid = QHBoxLayout()
         # left: preview
         self.preview = PreviewWidget(self.engine)
@@ -380,13 +420,13 @@ class MainWindow(QMainWindow):
         sb.addPermanentWidget(self.keep_running_cb)
 
         # wiring
+        self.tray = None                       # early: signals may fire during init
         self.builder.changed.connect(self._live_apply)
         self.bank.apply_requested.connect(self._activate_profile)
         self.bank.refreshed.connect(self._refresh_tray)
         PR.ensure_defaults()
         self.bank.refresh()
 
-        self.tray = None
         try:
             from PySide6.QtWidgets import QSystemTrayIcon
             if QSystemTrayIcon.isSystemTrayAvailable():
@@ -433,6 +473,8 @@ class MainWindow(QMainWindow):
     def _refresh_accents(self):
         aa, ab = theme.accents_for_profile(self.current_profile)
         self.preview.set_accents(aa, ab)
+        if hasattr(self.background, "set_accents"):
+            self.background.set_accents(aa, ab)
         QApplication.instance().setStyleSheet(theme.build_qss(aa, ab))
 
     # ---- streaming / daemon ---------------------------------------------
