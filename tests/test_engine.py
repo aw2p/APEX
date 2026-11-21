@@ -93,5 +93,23 @@ class TestEngine(unittest.TestCase):
         self.assertEqual(e.get_profile()["base"]["type"], "spectrum")
 
 
+class TestInputFeedMapping(unittest.TestCase):
+    """The evdev keycode -> HID usage bridge (user-reported offset bug)."""
+
+    def test_letter_mapping_is_hid_alphabetical(self):
+        from apexmini import inputfeed as IF
+        self.assertEqual(IF._usage_for_code(30), 0x04)   # A
+        self.assertEqual(IF._usage_for_code(31), 0x16)   # S  (NOT 0x05!)
+        self.assertEqual(IF._usage_for_code(32), 0x07)   # D
+        self.assertEqual(IF._usage_for_code(46), 0x06)   # C  (NOT 0x14='Q')
+        self.assertEqual(IF._usage_for_code(48), 0x05)   # B  (NOT 0x16='S')
+        self.assertEqual(IF._usage_for_code(17), 0x1A)   # W
+        self.assertEqual(IF._usage_for_code(57), 0x2C)   # space (NOT 0x1F='2')
+        self.assertEqual(IF._usage_for_code(58), 0x39)   # caps
+        self.assertEqual(IF._usage_for_code(41), 0x35)   # grave
+        self.assertEqual(IF._usage_for_code(59), 0x3A)   # F1
+        self.assertIsNone(IF._usage_for_code(9999))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

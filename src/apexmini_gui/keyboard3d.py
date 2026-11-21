@@ -21,25 +21,25 @@ from PySide6.QtGui import (
 
 from apexmini import keymap as K
 
-# ---- 60%-with-F-row layout (name -> usage from keymap) -----------------
+# ---- 60% layout (the Apex Pro Mini Wireless has NO dedicated F row —
+# F1..F12 live on the Fn layer; preview mirrors the physical board).
 # rows of (key-name-or-None, width-in-units); None = spacer
-_ROW0 = [("esc", 1.0)] + [(n, 1.0) for n in ("f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12")]
-_ROW1 = [("grave", 1.0), ("1", 1.0), ("2", 1.0), ("3", 1.0), ("4", 1.0), ("5", 1.0),
-         ("6", 1.0), ("7", 1.0), ("8", 1.0), ("9", 1.0), ("0", 1.0), ("minus", 1.0),
-         ("equal", 1.0), ("backspace", 2.0)]
-_ROW2 = [("tab", 1.5), ("q", 1.0), ("w", 1.0), ("e", 1.0), ("r", 1.0), ("t", 1.0),
+_ROW0 = [("esc", 1.0), ("1", 1.0), ("2", 1.0), ("3", 1.0), ("4", 1.0),
+         ("5", 1.0), ("6", 1.0), ("7", 1.0), ("8", 1.0), ("9", 1.0), ("0", 1.0),
+         ("minus", 1.0), ("equal", 1.0), ("backspace", 2.0)]
+_ROW1 = [("tab", 1.5), ("q", 1.0), ("w", 1.0), ("e", 1.0), ("r", 1.0), ("t", 1.0),
          ("y", 1.0), ("u", 1.0), ("i", 1.0), ("o", 1.0), ("p", 1.0),
          ("bracketleft", 1.0), ("bracketright", 1.0), ("backslash", 1.5)]
-_ROW3 = [("capslock", 1.75), ("a", 1.0), ("s", 1.0), ("d", 1.0), ("f", 1.0), ("g", 1.0),
+_ROW2 = [("capslock", 1.75), ("a", 1.0), ("s", 1.0), ("d", 1.0), ("f", 1.0), ("g", 1.0),
          ("h", 1.0), ("j", 1.0), ("k", 1.0), ("l", 1.0), ("semicolon", 1.0),
          ("apostrophe", 1.0), ("enter", 2.25)]
-_ROW4 = [("lshift", 2.25), ("z", 1.0), ("x", 1.0), ("c", 1.0), ("v", 1.0), ("b", 1.0),
+_ROW3 = [("lshift", 2.25), ("z", 1.0), ("x", 1.0), ("c", 1.0), ("v", 1.0), ("b", 1.0),
          ("n", 1.0), ("m", 1.0), ("comma", 1.0), ("period", 1.0), ("slash", 1.0),
          ("rshift", 2.75)]
-_ROW5 = [("lctrl", 1.25), ("lgui", 1.25), ("lalt", 1.25), ("space", 6.25),
+_ROW4 = [("lctrl", 1.25), ("lgui", 1.25), ("lalt", 1.25), ("space", 6.25),
          ("ralt", 1.25), ("fn", 1.25), ("rctrl", 1.25)]
 
-LAYOUT = [_ROW0, _ROW1, _ROW2, _ROW3, _ROW4, _ROW5]
+LAYOUT = [_ROW0, _ROW1, _ROW2, _ROW3, _ROW4]
 
 
 class IsoKey:
@@ -84,7 +84,7 @@ class Keyboard3DPreview:
     YAW = math.radians(-7)      # slight sideways angle for dynamism
     PITCH = math.radians(62)    # how "from above" we look
     BOARD_W = 15.5              # units
-    BOARD_H = 6 * 1.12          # units
+    BOARD_H = 5 * 1.12          # units (5 rows, no F row)
 
     def _camera(self):
         return (math.cos(self.YAW), math.sin(self.YAW),

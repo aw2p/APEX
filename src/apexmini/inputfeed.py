@@ -31,26 +31,38 @@ def find_keyboard_event_nodes(vid="1038"):
     return nodes
 
 
+# ---- Linux keycode -> HID usage --------------------------------------
+# HID usages are alphabetical (A=0x04..Z=0x1D); Linux keycodes are in
+# physical scan order — a linear offset is WRONG (C=46->0x14='Q' etc).
+KEYCODE_TO_USAGE = {
+    1: 0x29,                      # ESC
+    2: 0x1E, 3: 0x1F, 4: 0x20, 5: 0x21, 6: 0x22, 7: 0x23,
+    8: 0x24, 9: 0x25, 10: 0x26, 11: 0x27,          # 1..0
+    12: 0x2D, 13: 0x2E,           # minus, equal
+    14: 0x2A, 15: 0x2B,           # backspace, tab
+    16: 0x14, 17: 0x1A, 18: 0x08, 19: 0x15, 20: 0x17,   # Q W E R T
+    21: 0x1C, 22: 0x18, 23: 0x0C, 24: 0x12, 25: 0x13,   # Y U I O P
+    26: 0x2F, 27: 0x30,           # [ ]
+    28: 0x28, 29: 0xE0,           # enter, lctrl
+    30: 0x04, 31: 0x16, 32: 0x07, 33: 0x09, 34: 0x0A,   # A S D F G
+    35: 0x0B, 36: 0x0D, 37: 0x0E, 38: 0x0F,             # H J K L
+    39: 0x33, 40: 0x34,           # ; '
+    41: 0x35, 42: 0xE1, 43: 0x31, # grave, lshift, backslash
+    44: 0x1D, 45: 0x1B, 46: 0x06, 47: 0x19, 48: 0x05,   # Z X C V B
+    49: 0x11, 50: 0x10,           # N M
+    51: 0x36, 52: 0x37, 53: 0x38, # , . /
+    54: 0xE5, 56: 0xE2, 57: 0x2C, 58: 0x39,             # rshift, lalt, space, caps
+    59: 0x3A, 60: 0x3B, 61: 0x3C, 62: 0x3D, 63: 0x3E, 64: 0x3F,   # F1..F6
+    65: 0x40, 66: 0x41, 67: 0x42, 68: 0x43,             # F7..F10
+    87: 0x44, 88: 0x45,           # F11, F12
+    97: 0xE4, 100: 0xE6,          # rctrl, ralt
+    103: 0x52, 105: 0x50, 106: 0x4F, 108: 0x51,         # up left right down
+    125: 0xE3, 126: 0xE7,         # lgui, rgui
+}
+
+
 def _usage_for_code(code):
-    if 59 <= code <= 68:      # KEY_F1..F10
-        return 0x3A + (code - 59)
-    if 30 <= code <= 82:      # most printable keys (KEY_A(30) -> 0x04)
-        return 4 + (code - 30)
-    if code == 14:            # KEY_GRAVE
-        return 0x35
-    if code == 1:             # KEY_ESC
-        return 0x29
-    if code in (87, 88):      # F11, F12
-        return 0x43 + (code - 87)
-    if code == 111:
-        return 0x52           # up
-    if code == 114:
-        return 0x50           # left
-    if code == 115:
-        return 0x51           # down
-    if code == 113:
-        return 0x4F           # right
-    return None
+    return KEYCODE_TO_USAGE.get(code)
 
 
 class TypingFeed:
