@@ -27,7 +27,7 @@ def cmd_list(_args):
     active = PR.get_active_name()
     for e in entries:
         mark = " *" if e["name"] == active else ""
-        print("%-24s %s%s" % (e["name"], e["base"]["type"] if "profile" in e else "", mark))
+        print("%-24s %-10s%s" % (e["name"], e["profile"]["base"]["type"], mark))
 
 
 def cmd_use(args):

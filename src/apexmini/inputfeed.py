@@ -27,7 +27,7 @@ def find_keyboard_event_nodes(vid="1038"):
         if not pat.search(parent):
             continue
         for cand in glob.glob(os.path.join(parent, "input", "input*", "event*")):
-            nodes.append("/dev/" + os.path.basename(cand))
+            nodes.append("/dev/input/" + os.path.basename(cand))
     return nodes
 
 
@@ -78,10 +78,20 @@ class TypingFeed:
         path = self.event_path
         if path is None:
             cands = find_keyboard_event_nodes()
-            if not cands:
-                sys.stderr.write("typing feed: no evdev node found (pass event_path)\n")
+            # prefer nodes the kernel tags as keyboards
+            import subprocess
+            def is_kbd(n):
+                try:
+                    r = subprocess.run(["udevadm", "info", "-q", "property", "-n", n],
+                                       capture_output=True, text=True, timeout=2)
+                    return "ID_INPUT_KEYBOARD=1" in r.stdout
+                except Exception:
+                    return False
+            kbd_nodes = [n for n in cands if is_kbd(n)]
+            if not kbd_nodes:
+                sys.stderr.write("typing feed: no evdev keyboard node found (pass event_path)\n")
                 return
-            path = cands[0]
+            path = kbd_nodes[0]
         self.node = path
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
         partial = b""

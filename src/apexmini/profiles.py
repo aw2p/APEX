@@ -132,6 +132,23 @@ def list_profiles(directory=None):
     return out
 
 
+def ensure_defaults(directory=None):
+    """Seed a few starter profiles on first run."""
+    directory = directory or profiles_dir()
+    if list_profiles(directory):
+        return
+    save(DEFAULT_PROFILE, directory)
+    save(new_profile(
+        "ocean", "gradient", ["#00e5ff", "#0057ff", "#00ffd5"], speed=0.7,
+        brightness=0.9, reactive=True, reactive_color="#baffff", decay=0.9), directory)
+    save(new_profile(
+        "blood dragon", "breathing", ["#ff003c", "#7a0020"], speed=0.55,
+        brightness=1.0, reactive=True, reactive_color="#ff5577", decay=1.4), directory)
+    save(new_profile(
+        "ghost", "static", ["#9effe8"], speed=1.0, brightness=0.45,
+        reactive=True, reactive_color="#eaffff", decay=2.2), directory)
+
+
 def set_active_name(name):
     os.makedirs(config_dir(), exist_ok=True)
     with open(active_marker_path(), "w", encoding="utf-8") as f:

@@ -244,6 +244,7 @@ class BankPanel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("panel")
+        self.profile_provider = None      # MainWindow wires this to the builder
         lay = QVBoxLayout(self)
         lay.setContentsMargins(14, 12, 14, 12)
         lay.setSpacing(8)
@@ -269,9 +270,22 @@ class BankPanel(QFrame):
 
         self.btn_apply.clicked.connect(lambda: self._emit_selected("apply"))
         self.listw.itemDoubleClicked.connect(lambda *_: self._emit_selected("apply"))
+        self.btn_save.clicked.connect(self._save)
         self.btn_delete.clicked.connect(self._delete)
         self.btn_import.clicked.connect(self._import)
         self.btn_export.clicked.connect(self._export)
+
+    def _save(self):
+        if self.profile_provider is None:
+            return
+        prof = self.profile_provider()
+        PR.save(prof)
+        PR.set_active_name(prof["name"])
+        self.refresh()
+        for i in range(self.listw.count()):
+            if self.listw.item(i).text() == prof["name"]:
+                self.listw.setCurrentRow(i)
+                break
 
     def selected_name(self):
         it = self.listw.currentItem()
@@ -352,6 +366,7 @@ class MainWindow(QMainWindow):
 
         # bottom: bank
         self.bank = BankPanel()
+        self.bank.profile_provider = lambda: self.builder.to_profile()
         self.bank.setMaximumHeight(180)
         root.addWidget(self.bank, 1)
 
@@ -367,7 +382,17 @@ class MainWindow(QMainWindow):
         # wiring
         self.builder.changed.connect(self._live_apply)
         self.bank.apply_requested.connect(self._activate_profile)
+        self.bank.refreshed.connect(self._refresh_tray)
+        PR.ensure_defaults()
         self.bank.refresh()
+
+        self.tray = None
+        try:
+            from PySide6.QtWidgets import QSystemTrayIcon
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                self.tray = TrayController(self)
+        except Exception:
+            pass
 
         self.feed = None
         self.marker_timer = QTimer(self)
@@ -402,6 +427,8 @@ class MainWindow(QMainWindow):
         self.engine.set_profile(prof)
         PR.set_active_name(name)
         self._refresh_accents()
+        if self.tray:
+            self.tray.refresh_profiles()
 
     def _refresh_accents(self):
         aa, ab = theme.accents_for_profile(self.current_profile)
@@ -425,6 +452,19 @@ class MainWindow(QMainWindow):
         self.engine.note_press(usage)
         self.preview.key_pressed(usage)
 
+    def _refresh_tray(self):
+        if self.tray:
+            self.tray.refresh_profiles()
+
+    def full_quit(self):
+        """Real quit: stop streaming, release LEDs, exit."""
+        if self.stop_event:
+            self.stop_event.set()
+        if self.feed:
+            self.feed.stop()
+        self._keep_running = False
+        QApplication.instance().quit()
+
     def _check_marker(self):
         """External switches (CLI `use`, tray in daemon mode) → load them."""
         try:
@@ -436,17 +476,70 @@ class MainWindow(QMainWindow):
 
     # ---- lifecycle ------------------------------------------------------
     def closeEvent(self, ev):
-        if self.keep_running_cb.isChecked() and self.stop_event is not None:
-            # leave streaming alive in background: detach by hiding to tray-ish
+        if getattr(self, "_keep_running", True) is False:
+            super().closeEvent(ev)
+            return
+        if self.keep_running_cb.isChecked():
+            # minimize to tray/background: keep the stream alive
             ev.ignore()
             self.hide()
-            self.status_label.setText("hidden — still lighting; reopen from taskbar/dock or kill process")
+            if self.tray:
+                self.tray.tray.showMessage(
+                    "apexmini", "still lighting in the background — tray icon to reopen",
+                    __import__("PySide6.QtWidgets", fromlist=["QSystemTrayIcon"])
+                    .QSystemTrayIcon.Information, 2200)
             return
         if self.stop_event:
             self.stop_event.set()
         if self.feed:
             self.feed.stop()
         super().closeEvent(ev)
+
+
+class TrayController:
+    """System tray: quick profile switching without the window."""
+
+    def __init__(self, win):
+        from PySide6.QtWidgets import QSystemTrayIcon, QMenu
+        self.win = win
+        self.menu = QMenu()
+        self.profile_menu_actions = []
+
+        self.open_act = self.menu.addAction("open window")
+        self.open_act.triggered.connect(win.show)
+        self.menu.addSeparator()
+        self.profile_header = self.menu.addAction("profiles:")
+        self.profile_header.setEnabled(False)
+        self.quit_act = self.menu.addAction("quit (release LEDs)")
+        self.quit_act.triggered.connect(win.full_quit)
+
+        self.tray = QSystemTrayIcon(_app_icon())
+        self.tray.setContextMenu(self.menu)
+        self.tray.setToolTip("apexmini lighting suite")
+        self.tray.activated.connect(self._activated)
+        self.tray.show()
+        self.refresh_profiles()
+
+    def _activated(self, reason):
+        if reason == self.tray.Trigger:      # left click
+            self.win.show()
+            self.win.raise_()
+
+    def refresh_profiles(self):
+        from PySide6.QtWidgets import QMenu
+        for act in self.profile_menu_actions:
+            self.menu.removeAction(act)
+            act.deleteLater()
+        self.profile_menu_actions = []
+        for entry in PR.list_profiles():
+            act = self.menu.addAction(entry["name"])
+            act.triggered.connect(
+                lambda checked=False, name=entry["name"]: self.win._activate_profile(name))
+            self.profile_menu_actions.append(act)
+            self.menu.insertAction(self.quit_act, act)
+        self.menu.removeAction(self.profile_header)
+        self.menu.insertAction(self.profile_menu_actions[0] if self.profile_menu_actions
+                               else self.quit_act, self.profile_header)
 
 
 def _app_icon():
