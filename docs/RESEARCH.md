@@ -135,25 +135,33 @@ tests enforce that these cannot sneak in even from code I don't write.
   confirmation that the flash-erase/programming area is genuinely risky
   territory we stay out of.
 
-## 8. Hardware-validated wire facts (2026-11-05, on the dongle 0x1624)
+## 8. Hardware-validated wire facts (2026-11-05 dongle `0x1624`, 2026-11-21 cable `0x1626`)
+
+Transport cheat table (user keeps the board wired these days — cable mode is
+the primary path; dongle re-verified when the cable is out):
+
+| thing | dongle `0x1624` | USB cable `0x1626` |
+|---|---|---|
+| direct lighting | `00 61` ✅ lit | `00 21` ✅ lit (= 61−0x40 translation) |
+| release LEDs | `00 62` ✅ | `00 22` ✅ |
+| init | `00 4B` ✅ ACK | `00 4B` ✅ ACK |
+| battery | `00 BC`+`00 D2` (raw) | `00 92` (untested) |
+| firmware | `00 90` OUT → ASCII "3.24.1" | same expected |
+| dead opcodes | `0x40` ACKs, no visual; `0x3A` nothing | tbd (probe order covers 0x61/0x40/0x3A) |
 
 * feature init `00 4B` (65 B): ACK `[4B 00 …]`.
-* direct frame `00 61` at 642 B, count=112: ACK `[61 00 70 …]` and the whole
-  board visibly changed colour.  **This is the one that lights the keys.**
-* direct frame `00 40` at 642 B: ACK `[40 00 70 …]` but board ignored it.
-* legacy `00 3A`: sent, no colour change (reply echoes unrelated data).
-* firmware: `00 90` OUT → reply `[ASCII "3.24.1"…]` on the same input queue
-  (byte 0 is the string itself, no opcode prefix — differs from OpenRGB's
-  older convention; capture-tolerant parse).
-* brightness `00 23 N` OUT: accepted silently; **user controls brightness
-  with the Fn keybinds instead** (the `0xA3` read and the `FFC1` notify
-  channel do not respond from the host side on this dongle).
-* release `00 62`: ACK; lighting returns to on-board profile.Check
-  [(user-observed: profile resumes)].
-* battery: `00 D2` → `[D2 <data> 00 00 02 …]` (first data byte was 0x14=20 —
-  likely battery percentage or raw gauge; calibrate later).
-* unanswered on this channel (needs more experiments): `90` firmware, `A3`
-  brightness read.
+* dongle direct frame `00 61` @642 B ACKs `[61 00 70 …]`, lights whole board.
+* **cable mode**: `00 21` lights the board (2026-11-21, user-verified). The
+  receiver→USB-cable opcode translation `wireless − 0x40` from OpenGG's TKL
+  tables (61→21, 6F→2F, 4A→0A, 53→13, E6→A6) holds on this keyboard too —
+  a first for the Apex Pro Mini Wireless family.
+* firmware `00 90` OUT → ASCII reply directly on the input queue
+  (no opcode prefix — differs from OpenRGB's older convention).
+* brightness `00 23 N` OUT: accepted silently; the user controls brightness
+  with the Fn keybinds instead (`0xA3` read and `FFC1` notify channel do not
+  answer from the host side on the dongle).
+* battery `00 D2` → `[D2 14 00 00 02 …]` — first data byte 0x14=20 (percent?
+  raw gauge? calibration pending).
 
 ## 9. Sources
 
