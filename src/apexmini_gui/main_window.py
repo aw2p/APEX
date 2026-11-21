@@ -525,6 +525,8 @@ class MainWindow(QMainWindow):
         QApplication.instance().quit()
 
     def eventFilter(self, obj, ev):
+        if getattr(self, "_in_filter", False):
+            return False
         if ev.type() == QEvent.MouseMove and self.centralWidget() is not None:
             gp = ev.globalPosition()
             cw = self.centralWidget()
@@ -534,6 +536,7 @@ class MainWindow(QMainWindow):
             my = max(0.0, min(1.0, 1.0 - lp.y() / H))
             self.background.set_mouse(mx, my)
             self.preview.set_mouse(mx, my)
+            return False
         return super().eventFilter(obj, ev)
 
     def _check_marker(self):

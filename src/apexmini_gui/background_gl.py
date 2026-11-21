@@ -522,57 +522,61 @@ class LiquidMetalBackground(QOpenGLWidget):
 
         # ---- pass 2: the 3D keyboard ----
         if self._kg and getattr(self, "_kprog", None) and self._kprog.isLinked():
-            kg = self._kg
-            f.glClear(0x00000100)                     # depth buffer
-            f.glEnable(0x0B71)                        # GL_DEPTH_TEST
-            f.glDepthFunc(0x0203)                     # GL_LEQUAL
-            f.glEnable(0x0BE2)                        # GL_BLEND for AA edges
-            f.glBlendFunc(1, 0)                       # ONE, ZERO (opaque, but AA samples)
-            f.glBlendEquation(0x8006)
-            yaw = math.radians(-10) + lean_yaw
-            pitch = math.radians(48) + lean_pitch
-            target = (kg.BOARD_W / 2, kg.BOARD_H * 0.55, 0.0)
-            dist = 15.0
-            eye = (target[0] + dist * math.sin(yaw) * math.cos(pitch),
-                   target[1] - dist * math.cos(yaw) * math.cos(pitch),
-                   target[2] + dist * math.sin(pitch))
-            view = _mat_lookat(eye, target, (0.0, 0.0, 1.0))
-            proj = _mat_perspective(38.0, w / h, 0.5, 100.0)
-            mvp = _mat_mul(proj, view)
-            self._kprog.bind()
-            f.glUniformMatrix4fv(self._ku["u_mvp"], 1, True, mvp)
-            f.glUniform3f(self._ku["u_cam"], *eye)
-            lx = target[0] + (self._mouse[0] - 0.5) * 9.0 + math.sin(t * 0.13) * 1.2
-            ly = target[1] - 5.5
-            lz = target[2] + 4.5 + (self._mouse[1] - 0.5) * 3.0
-            f.glUniform3f(self._ku["u_light"], lx, ly, lz)
-            a = self._accents[0]
-            f.glUniform3f(self._ku["u_accentA"], a[0], a[1], a[2])
-            # per-vertex colours from the engine
-            colors = {u: (c[0] / 255, c[1] / 255, c[2] / 255)
-                      for u, c in (self._key_colors or {}).items()}
-            data = kg.color_bytes(colors)
-            # order matters: bind VBO → enable attrib → setAttribBuffer → release
-            self._vbo_pos.bind()
-            self._kprog.enableAttributeArray(0)
-            self._kprog.setAttributeBuffer(0, 0x1406, 0, 3, 0)
-            self._vbo_pos.release()
-            self._vbo_nrm.bind()
-            self._kprog.enableAttributeArray(1)
-            self._kprog.setAttributeBuffer(1, 0x1406, 0, 3, 0)
-            self._vbo_nrm.release()
-            self._vbo_col.bind()
-            self._vbo_col.write(0, data)
-            self._kprog.enableAttributeArray(2)
-            self._kprog.setAttributeBuffer(2, 0x1406, 0, 3, 0)
-            f.glDrawArrays(4, 0, kg.nverts)
-            self._kprog.disableAttributeArray(0)
-            self._kprog.disableAttributeArray(1)
-            self._kprog.disableAttributeArray(2)
-            self._vbo_col.release()
-            self._kprog.release()
-            f.glDisable(0x0B71)
-            f.glDisable(0x0BE2)
+          try:
+                kg = self._kg
+                f.glClear(0x00000100)                     # depth buffer
+                f.glEnable(0x0B71)                        # GL_DEPTH_TEST
+                f.glDepthFunc(0x0203)                     # GL_LEQUAL
+                f.glEnable(0x0BE2)                        # GL_BLEND for AA edges
+                f.glBlendFunc(1, 0)                       # ONE, ZERO (opaque, but AA samples)
+                f.glBlendEquation(0x8006)
+                yaw = math.radians(-10) + lean_yaw
+                pitch = math.radians(48) + lean_pitch
+                target = (kg.BOARD_W / 2, kg.BOARD_H * 0.55, 0.0)
+                dist = 15.0
+                eye = (target[0] + dist * math.sin(yaw) * math.cos(pitch),
+                       target[1] - dist * math.cos(yaw) * math.cos(pitch),
+                       target[2] + dist * math.sin(pitch))
+                view = _mat_lookat(eye, target, (0.0, 0.0, 1.0))
+                proj = _mat_perspective(38.0, w / h, 0.5, 100.0)
+                mvp = _mat_mul(proj, view)
+                self._kprog.bind()
+                f.glUniformMatrix4fv(self._ku["u_mvp"], 1, True, mvp)
+                f.glUniform3f(self._ku["u_cam"], *eye)
+                lx = target[0] + (self._mouse[0] - 0.5) * 9.0 + math.sin(t * 0.13) * 1.2
+                ly = target[1] - 5.5
+                lz = target[2] + 4.5 + (self._mouse[1] - 0.5) * 3.0
+                f.glUniform3f(self._ku["u_light"], lx, ly, lz)
+                a = self._accents[0]
+                f.glUniform3f(self._ku["u_accentA"], a[0], a[1], a[2])
+                # per-vertex colours from the engine
+                colors = {u: (c[0] / 255, c[1] / 255, c[2] / 255)
+                          for u, c in (self._key_colors or {}).items()}
+                data = kg.color_bytes(colors)
+                # order matters: bind VBO → enable attrib → setAttribBuffer → release
+                self._vbo_pos.bind()
+                self._kprog.enableAttributeArray(0)
+                self._kprog.setAttributeBuffer(0, 0x1406, 0, 3, 0)
+                self._vbo_pos.release()
+                self._vbo_nrm.bind()
+                self._kprog.enableAttributeArray(1)
+                self._kprog.setAttributeBuffer(1, 0x1406, 0, 3, 0)
+                self._vbo_nrm.release()
+                self._vbo_col.bind()
+                self._vbo_col.write(0, data, len(data))
+                self._kprog.enableAttributeArray(2)
+                self._kprog.setAttributeBuffer(2, 0x1406, 0, 3, 0)
+                f.glDrawArrays(4, 0, kg.nverts)
+                self._kprog.disableAttributeArray(0)
+                self._kprog.disableAttributeArray(1)
+                self._kprog.disableAttributeArray(2)
+                self._vbo_col.release()
+                self._kprog.release()
+                f.glDisable(0x0B71)
+                f.glDisable(0x0BE2)
+          except Exception as e:
+            import sys as _sys
+            print("keyboard pass error:", e, file=_sys.stderr, flush=True)
 
     # ---- legends: project key centres to widget coords ----------------
     def legend_positions(self):
