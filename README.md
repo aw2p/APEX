@@ -1,83 +1,122 @@
-# Apex Mini RGB — an Apex Pro Mini Wireless lighting controller
+# APEX
 
-Standalone, fully-standalone tool that takes control of the **SteelSeries Apex
-Pro Mini Wireless** keyboard lighting *directly over USB HID* on Linux — no
-SteelSeries GG, no Windows VM, no onboard-profile gymnastics.
+**A**mbient **P**er-key **E**ffects **X**ecutor — a lighting suite for the
+SteelSeries **Apex Pro Mini Wireless** (and protocol-siblings) on Linux.
 
-Working out of scope for "GG forever" setups: single solid color, brightness,
-per-key colors, and a handful of software effects (breathing / spectrum /
-wave / reactive).
+SteelSeries only ships lighting configuration for Windows. APEX talks to the
+keyboard's HID control interface directly: no GG, no VM, no Windows. Real
+per-key RGB, software effects streamed at your chosen fps, reactive typing
+flashes, and a Metalheart/Neo-Vectorheart GUI with a fake-3D keyboard
+preview that mirrors the board in real time.
+
+![APEX suite](docs/assets/hero.png)
+
+## What you get
+
+| | |
+|---|---|
+| **Per-key RGB** | any key, any colour, whole-board or subsets — hardware-verified `0x61`/`0x21` direct frames |
+| **Profiles** | JSON files in `~/.config/apexmini/profiles/`; save / import / export / switch on the fly |
+| **Effects** | static, gradient, breathing, spectrum, wave, candle (per-key organic flicker) |
+| **Reactive typing** | any keypress flashes that key with configurable decay — on the board *and* the GUI preview |
+| **GUI** | fake-3D keyboard preview, ambient plasma glow, adaptive neon accents, system tray with profile menu |
+| **Daemon** | headless background mode that survives replug/sleep and switches profiles from the CLI or tray |
+| **Safety** | the packet builder structurally refuses all profile/flash opcodes — APEX never touches onboard storage |
 
 ## Quick start
 
 ```bash
-# one-time (asks for sudo):
+# 1. grant your user access to the keyboard's hidraw nodes (one-time)
 sudo bash setup/00-grant-access.sh
 
-# then:
-cd src
-python3 ../tools/apexmini list         # find your control endpoint
-python3 ../tools/apexmini info         # firmware/brightness/battery probe
-python3 ../tools/apexmini color '#gaussianblue'   # (use a hex/name)
+# 2. GUI (needs the Qt venv, see below)
+tools/apexmini-suite
 ```
 
-Daily driver:
+Python deps: PySide6 (GUI only) installed into a project-local venv:
 
 ```bash
-apexmini color ff8800          # all keys orange
-apexmini key a=00ff00 s=00ff00 d=00ff00      # per-key (WASD green, rest black)
-apexmini effect spectrum --hz 30             # rainbow sweep, streamed
-apexmini onboard                             # release LEDs to onboard profile
+python3 -m venv --copies venv-qt
+venv-qt/bin/pip install PySide6
 ```
 
-## Hard safety rules
+The CLI/daemon/protocol core has **zero dependencies** beyond libhidapi.
 
-* The tool **never writes flash / onboard profile storage.** All profile
-  relevant opcodes (0x83/0x02/0x03/0x42/0x43/0xE6/0x53/0x68) are banned in the
-  core builder (`apexmini/protocol.py::FORBIDDEN`) and tests enforce it.
-* On exit, LED ownership is handed back to the firmware (direct frames are
-  "temporary"), so your onboard profile keeps working.
+### CLI
 
-## Status — honest floor
+```bash
+tools/apexmini list                  # enumerate keyboard control endpoints
+tools/apexmini info                  # firmware / battery / brightness probe
+tools/apexmini color ff6600          # solid colour
+tools/apexmini key a=ff0000 s=ff0000 # per-key
+tools/apexmini effect candle         # streamed effect (Ctrl-C → profile)
+tools/apexmini onboard               # hand LEDs back to on-board firmware
 
-| Function   | Wired-dongle on `0x1624` | Notes |
-|------------|-----------------|-------|
-| Endpoint detect | ✅ live-verified | FFC0 / iface 1.3, 642-B feature |
-| Firmware query | ⏳ needs 1 key press to test | output `00 90` reply style like TKL family |
-| Direct frame format | ✅ structurally proven | cross-checked vs OpenRGB & OpenGG |
-| Direct frame wire test | ⏳ | needs a 1-minute look at the keys |
-| Brightness | ⏳ | 0x23 / 0xA3 derived from a recent OpenRGB patch |
-| Battery | ⏳ | BC/D2 (dongle), from OpenGG's capture notes |
+tools/apexmini-suite use "ocean"     # switch profile (daemon/GUI picks it up)
+tools/apexmini-suite daemon &        # headless, replug-proof
+tools/apexmini-suite stop            # release LEDs, stop daemon
+```
 
-See `docs/RESEARCH.md` for everything we learned about the protocol, and
-`docs/RUNBOOK-TESTING.md` for the short list of what to try first after the
-udev rule is installed.
+### GUI
+
+`tools/apexmini-suite` — builder on the right (animation, palette, speed,
+brightness, reactive flash + decay), profile bank at the bottom, tray icon
+for switching with the window closed. Closing the window keeps lighting in
+the background (checkbox in the status bar).
+
+## Hardware support status
+
+| connection mode | PID | direct lighting | status |
+|---|---|---|---|
+| 2.4 GHz dongle | `0x1624` | `0x61` (642-byte feature frames) | ✅ verified |
+| USB cable | `0x1626` | `0x21` (= wireless − 0x40 translation) | ✅ verified |
+| Bluetooth | — | not probed yet | ⏳ |
+
+Also expected to work with protocol-siblings (Apex Pro TKL 2023 Wireless,
+Apex Pro TKL Gen 3, Apex 9 Mini) — same engine family; probe order covers
+them. `tools/apexmini probe` shows which opcode lights *your* board.
+
+Everything we reverse-engineered about the wire protocol (frame layouts,
+init sequence, release semantics, the −0x40 cable translation, battery
+telemetry) is documented in [`docs/RESEARCH.md`](docs/RESEARCH.md) and
+[`docs/cheatsheet.md`](docs/cheatsheet.md).
+
+## Safety statement
+
+APEX only sends lighting frames, an init packet, a release packet and
+read-only telemetry (firmware string, battery bytes). The opcodes that
+read/erase/write the keyboard's onboard profile storage (`0x83`, `0x02`,
+`0x03`, `0x42`, `0x43`, `0xE6`, `0x53`, `0x68`) are forbidden at the packet
+layer and enforced by tests. On exit the LEDs are always handed back to the
+keyboard's own firmware profile.
 
 ## Layout
 
 ```
-docs/RESEARCH.md          protocol/protocol findings (the big doc)
-docs/RUNBOOK-TESTING.md   what to run when testing on hardware
-docs/cheatsheet.md        one-page wire-name cheat sheet
-src/apexmini/hidapi.py    ctypes HID layer (libhidapi-hidraw)
-src/apexmini/reportdesc.py HID report descriptor parser (sysfs)
-src/apexmini/protocol.py  packet builders + forbidden list
-src/apexmini/device.py    discovery / open / transport logic
-src/apexmini/keymap.py    name<->HID-usage maps
-src/apexmini/effects.py   effect engine + color helpers
-src/apexmini/cli.py       CLI
-tools/apexmini            launcher
-tests/test_offline.py     offline unit tests (no hardware)
-udev/99-apexmini.rules    access grant
-setup/00-grant-access.sh  sudo installer for the rule
+src/apexmini/         protocol core (hidapi ctypes, packet builders, engine)
+src/apexmini_gui/     Qt suite (theme, 3D preview, builder, bank, tray, daemon)
+tools/                launchers + RE helpers (probe, render, tests)
+docs/                 RESEARCH.md, RUNBOOK-TESTING.md, cheatsheet.md
+tests/                offline unit tests (no hardware needed)
+udev/ + setup/        access rule + installer
 ```
 
-## Credits / prior art this is built upon
+## Credits / prior art
 
-* **OpenRGB** — SteelSeries Apex driver (Gen1/Gen2/Gen3 direct modes, 0x4B init,
-  key tables, packet sizing; GPL2 project by CalcProgrammer1, Filipe S.).
-* **OpenGG (GUHPY)** — the wireless Gen 3 protocol reference figuring out the
-  0x61/0x62 RGB ownership dance, BC/D2 battery/change telemetry.
-* **ssgg (Ven0m0)** — Rust SteelSeries replacement whose key tables and packet
-  builders were a cross-check second opinion.
-* **ApexCtl (AstroSnail)** — the OG Apex Linux controller (gen-0 family).
+* **OpenRGB** (CalcProgrammer1 & contributors) — Apex direct-mode protocol
+  families (Gen1 `0x3A`, Gen2/Gen3 `0x40`/`0x61`), init packet, firmware check.
+* **OpenGG** (GUHPY) — wireless Gen3 transport semantics (RGB ownership,
+  release, battery queries) and the receiver→USB-cable opcode translation
+  that APEX verified on the Mini Wireless.
+* **steelseriesgg-rs** (Ven0m0) — per-model frame matrix and GG-capture key
+  tables used as cross-reference.
+* **ApexCtl** (AstroSnail) — the OG Apex Linux controller.
+
+APEX itself is an independent implementation (no code copied from the above);
+the hardware facts they published were re-verified live on the Apex Pro Mini
+Wireless, including the cable-mode `0x21` path which had not been documented
+for this model before.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use at your own risk; it's your keyboard.
