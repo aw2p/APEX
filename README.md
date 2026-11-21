@@ -11,6 +11,11 @@ breathes with the board.
 
 ![APEX suite](docs/assets/preview.gif)
 
+> [!CAUTION]
+> **APEX is in its earliest development stage.**
+>
+> It's pre-alpha and full of bugs. Things will break, configs will change, and nothing is stable yet. Don't rely on it — but bug reports and PRs are welcome.
+
 ## What you get
 
 | | |
